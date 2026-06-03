@@ -1,0 +1,78 @@
+# Standalone lint pass on generated outputs.
+#
+# Runs on every PR touching outputs/tests/** to keep the generated suite
+# clean over time. eslint-plugin-playwright autofix handles ~50% of test
+# smells for free per research (arxiv:2410.10628 — post-processing > prompt
+# engineering for test smells).
+#
+# This is intentionally separate from migrate.yml so:
+#   - Pure cosmetic fixes (linter rule bump, prettier config change) don't
+#     need to re-trigger an LLM run.
+#   - Humans editing generated tests after merge get the same lint gate.
+
+name: Lint generated tests
+
+on:
+  pull_request:
+    paths:
+      - 'outputs/tests/**'
+      - '.eslintrc*'
+      - 'package.json'
+  push:
+    branches: [main]
+    paths:
+      - 'outputs/tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Setup Node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: TypeScript strict
+        run: npx tsc --noEmit -p outputs/tests/tsconfig.json
+
+      - name: ESLint (no fix — surface issues)
+        run: npx eslint 'outputs/tests/**/*.ts'
+
+      - name: Playwright parse
+        run: npx playwright test --list 'outputs/tests/**/*.spec.ts'
+
+      - name: Forbidden patterns hard-fail check
+        shell: bash
+        run: |
+          set -euo pipefail
+          FAIL=0
+          # Hard-fail patterns from config/migration-rules.md §8.
+          for pattern in \
+            'waitForTimeout' \
+            'force: true' \
+            'page\.pause()' \
+            '\.nth(' \
+            'test\.only' \
+            'test\.skip' \
+            ': any\b' \
+            'as unknown as' \
+            'console\.log' \
+          ; do
+            if grep -rE "$pattern" outputs/tests/ --include='*.ts' --include='*.tsx'; then
+              echo "::error::Forbidden pattern '$pattern' found in generated tests"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" -ne 0 ]; then
+            exit 1
+          fi

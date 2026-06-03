@@ -1,0 +1,223 @@
+# Stage 1 — Migration planning.
+#
+# Trigger: any push that touches `inputs/**` (a new source test was added)
+# OR a manual workflow_dispatch (re-plan a specific file).
+#
+# What it does:
+#   1. Detects which input file(s) changed.
+#   2. For each changed input, invokes Claude (via claude-code-action) with:
+#        - prompts/analyze.md as the system prompt
+#        - config/knowledge-base.md + config/migration-rules.md as cached context
+#        - the input file itself
+#   3. Claude emits a per-input migration plan markdown to outputs/plans/<input-basename>.md.
+#   4. Opens a PR labeled `migrator:plan` for human review.
+#   5. Stage 2 (migrate.yml) only fires when the labeled PR is merged.
+#
+# Security:
+#   - Pinned action SHAs (renovate/dependabot will keep them current).
+#   - Minimal permissions per stage; never `write-all`.
+#   - Never `pull_request_target` + head ref checkout (the "pwn request" pattern).
+#   - GitHub App token preferred over PAT (set GH_APP_ID + GH_APP_PRIVATE_KEY secrets).
+#
+# Cost control:
+#   - Prompt caching is wired in claude-code-action; the knowledge-base + rules
+#     are stable across runs and get the 0.1x cache-read multiplier.
+#   - --max-turns 5 caps agent loops.
+#   - Plan stage uses Sonnet (cheap, good plan quality). Stage 2 (generate.yml)
+#     defaults to Sonnet too; verify.yml uses Opus only on low-confidence outputs.
+#   - Idempotency: tree-hash check skips re-planning if a PR with the same
+#     `migrator:plan:<sha>` label already exists.
+
+name: Stage 1 — Plan migration
+
+on:
+  push:
+    branches-ignore:
+      - 'migrator/**' # Don't re-plan on our own PR branches.
+    paths:
+      - 'inputs/**'
+  workflow_dispatch:
+    inputs:
+      input_path:
+        description: 'Path to a single input file (relative to repo root) to re-plan'
+        required: true
+        type: string
+
+# One in-flight plan per branch. Don't cancel — let LLM calls finish so we
+# don't waste tokens halfway through a generation.
+concurrency:
+  group: pwm-plan-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  # No `actions: write` — we don't trigger other workflows from here.
+
+jobs:
+  detect-changed-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      inputs_json: ${{ steps.detect.outputs.inputs_json }}
+      has_inputs: ${{ steps.detect.outputs.has_inputs }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 2 # Need previous commit for diff.
+
+      - name: Detect changed input files
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual replay — one file at a time.
+            INPUT="${{ inputs.input_path }}"
+            if [ ! -f "$INPUT" ]; then
+              echo "::error::input_path '$INPUT' not found in repo"
+              exit 1
+            fi
+            JSON=$(jq -nc --arg p "$INPUT" '[$p]')
+          else
+            # Push trigger — diff against previous commit.
+            JSON=$(git diff --name-only HEAD^ HEAD -- 'inputs/**' \
+              | jq -Rsc 'split("\n") | map(select(length > 0))')
+          fi
+          echo "inputs_json=$JSON" >> "$GITHUB_OUTPUT"
+          if [ "$(echo "$JSON" | jq 'length')" -gt 0 ]; then
+            echo "has_inputs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_inputs=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected inputs: $JSON"
+
+  plan:
+    needs: detect-changed-inputs
+    if: needs.detect-changed-inputs.outputs.has_inputs == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      # Per-input fanout so a flaky LLM call on one file doesn't block others.
+      fail-fast: false
+      matrix:
+        input_path: ${{ fromJSON(needs.detect-changed-inputs.outputs.inputs_json) }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Compute idempotency key (tree hash of input file)
+        id: idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          INPUT="${{ matrix.input_path }}"
+          HASH=$(git rev-parse "HEAD:$INPUT" || echo "missing")
+          BASENAME=$(basename "$INPUT")
+          LABEL="migrator:plan:${HASH:0:12}"
+          echo "input_basename=$BASENAME" >> "$GITHUB_OUTPUT"
+          echo "tree_hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if plan PR with this tree hash already exists
+        id: dedup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          LABEL="${{ steps.idempotency.outputs.label }}"
+          # Search open + closed PRs by label.
+          EXISTING=$(gh pr list --state all --label "$LABEL" --json number --jq 'length')
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "Plan PR with label $LABEL already exists. Skipping LLM call."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Claude Code (analyze stage)
+        if: steps.dedup.outputs.skip == 'false'
+        uses: anthropics/claude-code-action@8e4cb02b1c1a3a2a5e3b4c5d6e7f8090a1b2c3d4 # PIN ME — see README
+        with:
+          # Cached system prompt: rules + knowledge-base are the stable prefix.
+          system_prompt_path: prompts/analyze.md
+          additional_context_paths: |
+            config/migration-rules.md
+            config/knowledge-base.md
+            ${{ matrix.input_path }}
+          # Sonnet for planning — good quality, cheap.
+          model: claude-sonnet-4-6
+          temperature: '0'
+          max_turns: '5'
+          # Tools Claude is allowed to use during planning.
+          allowed_tools: 'Read,Write'
+          # The deliverable: the plan markdown only. No code generation here.
+          required_output_path: outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Output validation (plan must reference all source idioms)
+        if: steps.dedup.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLAN="outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md"
+          if [ ! -f "$PLAN" ]; then
+            echo "::error::Plan file $PLAN was not produced"
+            exit 1
+          fi
+          # The plan MUST include these schema sections (see migration-rules.md §9).
+          for section in "## Source framework" "## Summary" "## Anti-patterns detected" "## Locator translation table" "## Structural changes" "## Open questions for reviewer" "## Risk callouts" "## Expected metrics"; do
+            if ! grep -qF "$section" "$PLAN"; then
+              echo "::error::Plan is missing required section: $section"
+              exit 1
+            fi
+          done
+          # Plan must mark each locator with HIGH/MED/LOW confidence.
+          if ! grep -qE 'high|med|low' "$PLAN"; then
+            echo "::error::Plan does not include any confidence markers"
+            exit 1
+          fi
+          echo "Plan validated."
+
+      - name: Open plan PR
+        if: steps.dedup.outputs.skip == 'false'
+        uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5
+        with:
+          branch: migrator/plan-${{ steps.idempotency.outputs.input_basename }}
+          base: main
+          commit-message: 'chore(plan): migration plan for ${{ matrix.input_path }}'
+          title: '[Migration plan] ${{ matrix.input_path }}'
+          labels: |
+            migrator:plan
+            ${{ steps.idempotency.outputs.label }}
+          body: |
+            ## Stage 1 — Migration plan
+
+            **Input:** `${{ matrix.input_path }}`
+            **Plan:** `outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md`
+            **Tree hash:** `${{ steps.idempotency.outputs.tree_hash }}`
+
+            ### Review checklist
+
+            - [ ] Source framework detected correctly?
+            - [ ] All anti-patterns listed match what you'd flag manually?
+            - [ ] Locator confidence column — are LOW/MED entries appropriately flagged for reviewer attention?
+            - [ ] Structural changes (POM / fixture extraction) match the file's complexity?
+            - [ ] Open questions answered? (Edit the plan if so.)
+
+            ### What happens on merge
+
+            Merging this PR triggers Stage 2 (code generation) via `migrate.yml`.
+            Stage 2 reads this plan and emits the Playwright TS migration.
+
+            **If the plan looks wrong, edit it before merge.** The plan is a
+            human-editable contract — Stage 2 follows it literally.
+
+            ### Honest caveats
+
+            - This plan is LLM-generated. It may miss subtle semantic intent.
+            - LOW-confidence locator translations are guesses; verify against
+              the target app's actual DOM when possible.
+            - The migration report in Stage 2 will quantify what changed; this
+              plan only outlines the *intended* changes.

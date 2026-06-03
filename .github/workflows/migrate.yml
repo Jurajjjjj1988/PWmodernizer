@@ -1,0 +1,235 @@
+# Stage 2 — Code generation.
+#
+# Trigger: a `migrator:plan` PR has been merged AND closed.
+# We use `pull_request: types: [closed]` + an `if:` filter on `merged == true`,
+# NOT `workflow_run` (poisoned-artifact risk) and NOT `label` chaining
+# (race window CVE — community discussion #69337).
+#
+# Flow:
+#   1. Detect which input the merged plan corresponds to.
+#   2. Run claude-code-action with the generate prompt + plan + knowledge-base + rules.
+#   3. Validate output: tsc --noEmit, eslint-plugin-playwright (autofix), playwright test --list.
+#   4. Run evaluate.ts to produce MIGRATION_REPORT.md with metrics.
+#   5. If aggregate confidence < 0.7 → trigger verify.yml on a separate Opus run.
+#   6. Open a PR labeled `migrator:code` with the generated test + POM/fixtures + report.
+
+name: Stage 2 — Generate Playwright code
+
+on:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: pwm-migrate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write       # We commit the migration to a new branch.
+  pull-requests: write  # Open the code PR.
+
+jobs:
+  guard:
+    # Cheap gate so we don't spin up the heavy job for non-merged or wrong-label PRs.
+    runs-on: ubuntu-latest
+    if: |
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'migrator:plan')
+    outputs:
+      plan_path: ${{ steps.parse.outputs.plan_path }}
+      input_path: ${{ steps.parse.outputs.input_path }}
+      input_basename: ${{ steps.parse.outputs.input_basename }}
+    steps:
+      - name: Checkout merged state
+        # Post-merge — safe to checkout main directly.
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: main
+
+      - name: Parse plan PR for input path
+        id: parse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Plan PR body has a line "**Input:** `<path>`" — extract it.
+          BODY=$(gh pr view "$PR_NUMBER" --json body --jq .body)
+          INPUT=$(printf '%s\n' "$BODY" | grep -E '^\*\*Input:\*\*' | sed -E 's/.*`([^`]+)`.*/\1/' | head -n1)
+          if [ -z "$INPUT" ] || [ ! -f "$INPUT" ]; then
+            echo "::error::Could not extract input path from plan PR body, or file missing on main"
+            exit 1
+          fi
+          BASE=$(basename "$INPUT")
+          PLAN="outputs/plans/$BASE.md"
+          if [ ! -f "$PLAN" ]; then
+            echo "::error::Plan file $PLAN not found on main (it should have merged via this PR)"
+            exit 1
+          fi
+          echo "input_path=$INPUT" >> "$GITHUB_OUTPUT"
+          echo "input_basename=$BASE" >> "$GITHUB_OUTPUT"
+          echo "plan_path=$PLAN" >> "$GITHUB_OUTPUT"
+
+  generate:
+    needs: guard
+    runs-on: ubuntu-latest
+    outputs:
+      confidence: ${{ steps.evaluate.outputs.confidence }}
+    steps:
+      - name: Checkout merged state
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run Claude Code (generate stage)
+        uses: anthropics/claude-code-action@8e4cb02b1c1a3a2a5e3b4c5d6e7f8090a1b2c3d4 # PIN ME — see README
+        with:
+          system_prompt_path: prompts/generate.md
+          # Diff-context: include only the relevant API translation rows
+          # via the smart extractor (scripts/extract-relevant-rules.ts).
+          # For v0, we pass full knowledge-base — extractor lands in v1.
+          additional_context_paths: |
+            config/migration-rules.md
+            config/knowledge-base.md
+            ${{ needs.guard.outputs.plan_path }}
+            ${{ needs.guard.outputs.input_path }}
+          model: claude-sonnet-4-6
+          temperature: '0'
+          max_turns: '10'
+          allowed_tools: 'Read,Write,Bash'
+          # The Stage 2 contract: TS file + optional POM/fixture + migration report.
+          # We don't pin a single required_output_path because the plan may say
+          # "extract POM" or "split into two files".
+          required_output_glob: 'outputs/tests/**/*.{ts,md}'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Optional — if set, scripts/playwright-mcp-bridge.ts will let Claude
+          # ground locators against the live DOM. Without it, all locators
+          # carry LOW confidence in the report.
+          MIGRATION_TARGET_URL: ${{ secrets.MIGRATION_TARGET_URL }}
+
+      - name: Typecheck generated tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Generated output lives under outputs/tests/ — type-check it with
+          # the project tsconfig (strict mode).
+          npx tsc --noEmit -p outputs/tests/tsconfig.json || (
+            echo "::error::tsc failed on generated output"
+            exit 1
+          )
+
+      - name: ESLint --fix on generated tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # eslint-plugin-playwright autofix handles ~50% of test smells for free.
+          # Anything that survives is a real issue.
+          npx eslint --fix 'outputs/tests/**/*.ts' || (
+            echo "::error::eslint left unfixable issues"
+            exit 1
+          )
+
+      - name: Playwright parse check
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Verify the generated tests at least PARSE as Playwright specs.
+          npx playwright test --list 'outputs/tests/**/*.spec.ts' || (
+            echo "::error::Playwright failed to enumerate generated tests"
+            exit 1
+          )
+
+      - name: AST-diff-not-trivial check
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Reject cosmetic-only "migrations" where the LLM reformatted instead
+          # of restructuring. See scripts/ast-diff-trivial-check.ts.
+          npx tsx scripts/ast-diff-trivial-check.ts \
+            --input "${{ needs.guard.outputs.input_path }}" \
+            --output "outputs/tests/${{ needs.guard.outputs.input_basename }}.spec.ts"
+
+      - name: Evaluate migration (smell scan, selector quality, CTSES)
+        id: evaluate
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Emits outputs/reports/<input>.md with the full metric bundle.
+          # Also writes a single `confidence` number to stdout for routing.
+          CONFIDENCE=$(npx tsx scripts/evaluate.ts \
+            --input "${{ needs.guard.outputs.input_path }}" \
+            --plan "${{ needs.guard.outputs.plan_path }}" \
+            --output "outputs/tests/${{ needs.guard.outputs.input_basename }}.spec.ts" \
+            --report-out "outputs/reports/${{ needs.guard.outputs.input_basename }}.md")
+          echo "confidence=$CONFIDENCE" >> "$GITHUB_OUTPUT"
+          echo "Migration confidence: $CONFIDENCE"
+
+      - name: Open code PR
+        uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f # v7.0.5
+        with:
+          branch: migrator/code-${{ needs.guard.outputs.input_basename }}
+          base: main
+          commit-message: 'feat(migration): generated code for ${{ needs.guard.outputs.input_path }}'
+          title: '[Migration code] ${{ needs.guard.outputs.input_path }}'
+          labels: |
+            migrator:code
+            confidence-${{ steps.evaluate.outputs.confidence < 0.7 && 'low' || 'high' }}
+          body: |
+            ## Stage 2 — Generated migration
+
+            **Input:** `${{ needs.guard.outputs.input_path }}`
+            **Plan:** `${{ needs.guard.outputs.plan_path }}` (merged in #${{ github.event.pull_request.number }})
+            **Migration report:** `outputs/reports/${{ needs.guard.outputs.input_basename }}.md`
+            **Aggregate confidence:** ${{ steps.evaluate.outputs.confidence }}
+
+            ### Validation gates (all passed)
+
+            - ✅ `tsc --noEmit` (strict mode)
+            - ✅ `eslint-plugin-playwright` (autofixed)
+            - ✅ `playwright test --list` (parses as spec)
+            - ✅ AST-diff-not-trivial (real structural change, not cosmetic)
+
+            ### Review checklist
+
+            - [ ] Open the migration report — check the smell-scan deltas and selector quality score
+            - [ ] If confidence < 0.7, the verify.yml stage will (or already has) flagged disagreements
+            - [ ] Compare to original input — does the new test catch the same bugs?
+            - [ ] Locator-level: are LOW-confidence translations from the plan actually right?
+
+            ### Honest caveats
+
+            - Pure-LLM migration without DOM grounding will hallucinate roles.
+              Set `MIGRATION_TARGET_URL` secret to enable playwright-mcp grounding.
+            - Generated tests pass static gates but may flake against the real app.
+              Run `npx playwright test` against staging before merging.
+
+  trigger-verify:
+    needs: [guard, generate]
+    if: needs.generate.outputs.confidence < '0.7'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch verify workflow
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'verify.yml',
+              ref: 'main',
+              inputs: {
+                input_basename: '${{ needs.guard.outputs.input_basename }}',
+                generate_confidence: '${{ needs.generate.outputs.confidence }}',
+              },
+            });

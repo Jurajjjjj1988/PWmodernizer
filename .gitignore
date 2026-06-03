@@ -1,0 +1,22 @@
+node_modules/
+.DS_Store
+*.log
+*.tsbuildinfo
+
+# Playwright artifacts (never commit these).
+playwright-report/
+test-results/
+playwright/.cache/
+
+# IDE.
+.idea/
+.vscode/
+*.code-workspace
+
+# Env / secrets.
+.env
+.env.local
+.env.*.local
+
+# OS.
+Thumbs.db

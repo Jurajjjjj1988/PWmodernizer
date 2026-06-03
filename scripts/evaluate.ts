@@ -1,0 +1,367 @@
+#!/usr/bin/env node
+/**
+ * evaluate.ts — produces `outputs/reports/<input>.md` with concrete metrics.
+ *
+ * Runs in migrate.yml after the generation step. Outputs to stdout a single
+ * `confidence` number (0..1) that the workflow uses to decide whether to
+ * trigger verify.yml.
+ *
+ * Metrics produced (per migration-rules.md §9 + knowledge-base.md §7):
+ *   - Compile/parse pass (binary)
+ *   - Selector quality score (role/label/testid count vs nth/CSS/XPath)
+ *   - Web-first assertion rate
+ *   - Smell count delta vs source (Magic Number, Hard Wait, Eager, etc.)
+ *   - Forbidden patterns present (list)
+ *   - AST-diff-not-trivial flag
+ *   - Plan confidence aggregate (read from outputs/plans/<input>.md)
+ *
+ * Run:
+ *   npx tsx scripts/evaluate.ts \
+ *     --input inputs/bad-playwright/foo.spec.ts \
+ *     --plan outputs/plans/foo.spec.ts.md \
+ *     --output outputs/tests/foo.spec.ts \
+ *     --report-out outputs/reports/foo.spec.ts.md
+ */
+
+import { readFileSync, writeFileSync } from "node:fs";
+import { basename } from "node:path";
+import { parseArgs } from "node:util";
+
+interface Args {
+  input: string;
+  plan: string;
+  output: string;
+  "report-out": string;
+}
+
+function parseCliArgs(): Args {
+  const { values } = parseArgs({
+    options: {
+      input: { type: "string" },
+      plan: { type: "string" },
+      output: { type: "string" },
+      "report-out": { type: "string" },
+    },
+  });
+  for (const k of ["input", "plan", "output", "report-out"] as const) {
+    if (!values[k]) {
+      throw new Error(`--${k} is required`);
+    }
+  }
+  return values as unknown as Args;
+}
+
+// ---- Smell detectors (regex-based; defensible for v0).
+// Per arxiv:2410.10628 these counts dominate "is this a good test" judgement.
+interface SmellCount {
+  hardWaits: number;
+  magicNumbers: number;
+  forcedClicks: number;
+  nthSelectors: number;
+  cssClassSelectors: number;
+  pagePauses: number;
+  testOnly: number;
+  testSkip: number;
+  anyType: number;
+  consoleLog: number;
+  nonWebFirstAsserts: number;
+  conditionalInTest: number;
+}
+
+function emptySmells(): SmellCount {
+  return {
+    hardWaits: 0,
+    magicNumbers: 0,
+    forcedClicks: 0,
+    nthSelectors: 0,
+    cssClassSelectors: 0,
+    pagePauses: 0,
+    testOnly: 0,
+    testSkip: 0,
+    anyType: 0,
+    consoleLog: 0,
+    nonWebFirstAsserts: 0,
+    conditionalInTest: 0,
+  };
+}
+
+function countSmells(source: string): SmellCount {
+  const c = emptySmells();
+  // Hard waits (Playwright + Cypress + Selenium variants).
+  c.hardWaits += (source.match(/waitForTimeout\s*\(/g) ?? []).length;
+  c.hardWaits += (source.match(/cy\.wait\s*\(\s*\d+/g) ?? []).length;
+  c.hardWaits += (source.match(/Thread\.sleep\s*\(/g) ?? []).length;
+  c.hardWaits += (source.match(/time\.sleep\s*\(/g) ?? []).length;
+
+  // Magic numbers in test bodies — integers >= 2 not in array index context.
+  // Conservative: count any standalone integer >= 100 (timeouts).
+  c.magicNumbers += (source.match(/\b\d{3,}\b/g) ?? []).length;
+
+  // Forced actions bypass actionability — almost always wrong.
+  c.forcedClicks += (source.match(/\.\s*(click|fill|check)\s*\([^)]*force\s*:\s*true/g) ?? [])
+    .length;
+
+  // Index-based selectors.
+  c.nthSelectors += (source.match(/\.nth\s*\(/g) ?? []).length;
+  c.nthSelectors += (source.match(/\.eq\s*\(\s*\d/g) ?? []).length;
+  c.nthSelectors += (source.match(/findElements?\([^)]*\)\.get\s*\(\s*\d/g) ?? []).length;
+
+  // CSS class as primary selector — `page.locator('.foo')` patterns.
+  c.cssClassSelectors += (source.match(/\.locator\s*\(\s*['"`]\.[a-zA-Z]/g) ?? []).length;
+  c.cssClassSelectors += (source.match(/cy\.get\s*\(\s*['"`]\.[a-zA-Z]/g) ?? []).length;
+
+  // Debug surface left in.
+  c.pagePauses += (source.match(/page\.pause\s*\(\s*\)/g) ?? []).length;
+  c.pagePauses += (source.match(/cy\.pause\s*\(\s*\)/g) ?? []).length;
+
+  c.testOnly += (source.match(/test\.only\s*\(/g) ?? []).length;
+  c.testOnly += (source.match(/it\.only\s*\(/g) ?? []).length;
+  c.testOnly += (source.match(/describe\.only\s*\(/g) ?? []).length;
+
+  c.testSkip += (source.match(/test\.skip\s*\(/g) ?? []).length;
+  c.testSkip += (source.match(/it\.skip\s*\(/g) ?? []).length;
+
+  c.anyType += (source.match(/:\s*any\b/g) ?? []).length;
+  c.anyType += (source.match(/\bas\s+unknown\s+as\b/g) ?? []).length;
+
+  c.consoleLog += (source.match(/console\.log\s*\(/g) ?? []).length;
+
+  // Non-web-first assertions — anti-pattern in Playwright.
+  c.nonWebFirstAsserts +=
+    (source.match(/expect\s*\(\s*await\s+[a-zA-Z_$.][^)]*\.(isVisible|isHidden|isEnabled|isDisabled|isChecked|count|textContent)\s*\(\s*\)\s*\)\s*\.\s*(toBe|toEqual)/g) ??
+      []).length;
+
+  // Conditional logic inside test bodies (true smell, but very hard to
+  // count without AST — conservative: search for `if (` after `test(`.
+  const testBodies = source.matchAll(/test\s*\([\s\S]*?\)\s*=>\s*\{[\s\S]*?\n\s*\}\s*\)/g);
+  for (const m of testBodies) {
+    c.conditionalInTest += (m[0].match(/\n\s*if\s*\(/g) ?? []).length;
+  }
+
+  return c;
+}
+
+// ---- Selector quality (canonical / fragile ratio).
+interface SelectorMix {
+  canonical: number; // getByRole, getByLabel, getByTestId, getByPlaceholder, getByText, getByAltText, getByTitle
+  fragile: number; // nth, locator('css'), xpath, eq()
+}
+
+function selectorMix(source: string): SelectorMix {
+  const canonical =
+    (source.match(/getByRole\s*\(/g) ?? []).length +
+    (source.match(/getByLabel\s*\(/g) ?? []).length +
+    (source.match(/getByTestId\s*\(/g) ?? []).length +
+    (source.match(/getByPlaceholder\s*\(/g) ?? []).length +
+    (source.match(/getByText\s*\(/g) ?? []).length +
+    (source.match(/getByAltText\s*\(/g) ?? []).length +
+    (source.match(/getByTitle\s*\(/g) ?? []).length;
+  const fragile =
+    (source.match(/\.nth\s*\(/g) ?? []).length +
+    (source.match(/\.eq\s*\(\s*\d/g) ?? []).length +
+    (source.match(/\.locator\s*\(\s*['"`][.#:[]/g) ?? []).length +
+    (source.match(/xpath\s*=\s*['"`]/g) ?? []).length;
+  return { canonical, fragile };
+}
+
+function selectorQualityScore(mix: SelectorMix): number {
+  const total = mix.canonical + mix.fragile;
+  if (total === 0) return 1;
+  return mix.canonical / total;
+}
+
+// ---- Web-first assertion rate.
+function webFirstAssertionRate(source: string): number {
+  const webFirst = (source.match(/await\s+expect\s*\(/g) ?? []).length;
+  const sync = (source.match(/expect\s*\(\s*[a-zA-Z_$.]+\.(text|value|count)\s*\(\s*\)\s*\)/g) ?? [])
+    .length;
+  const total = webFirst + sync;
+  if (total === 0) return 1;
+  return webFirst / total;
+}
+
+// ---- Forbidden patterns hard list.
+function findForbidden(source: string): string[] {
+  const hits: string[] = [];
+  if (/waitForTimeout/.test(source)) hits.push("waitForTimeout");
+  if (/force\s*:\s*true/.test(source)) hits.push("force: true");
+  if (/page\.pause\s*\(/.test(source)) hits.push("page.pause()");
+  if (/test\.only\s*\(/.test(source)) hits.push("test.only");
+  if (/test\.skip\s*\(/.test(source)) hits.push("test.skip");
+  if (/:\s*any\b/.test(source)) hits.push("`: any` type");
+  if (/\bas\s+unknown\s+as\b/.test(source)) hits.push("as unknown as cast");
+  if (/console\.log\s*\(/.test(source)) hits.push("console.log");
+  return hits;
+}
+
+// ---- Plan confidence aggregate. Read the plan markdown, count HIGH/MED/LOW.
+interface PlanConfidence {
+  high: number;
+  med: number;
+  low: number;
+  aggregate: number;
+}
+
+function planConfidence(planMd: string): PlanConfidence {
+  const tableLines = planMd
+    .split("\n")
+    .filter((l) => /^\|/.test(l) && /\b(high|med|low)\b/i.test(l));
+  let high = 0;
+  let med = 0;
+  let low = 0;
+  for (const line of tableLines) {
+    const lower = line.toLowerCase();
+    // "Confidence" column — find the cell value (rough heuristic).
+    if (/\bhigh\b/.test(lower)) high += 1;
+    else if (/\bmed(ium)?\b/.test(lower)) med += 1;
+    else if (/\blow\b/.test(lower)) low += 1;
+  }
+  const total = high + med + low;
+  if (total === 0) {
+    return { high, med, low, aggregate: 0.5 };
+  }
+  // High=1.0, Med=0.6, Low=0.2 weighted average.
+  const aggregate = (high * 1 + med * 0.6 + low * 0.2) / total;
+  return { high, med, low, aggregate };
+}
+
+// ---- AST-diff-not-trivial heuristic.
+// Conservative: count chars / lines / unique identifiers. If output diff is
+// only whitespace + imports vs source, mark trivial. Real AST analysis is a
+// v1 improvement; for v0 this catches the gross cases.
+function isAstDiffTrivial(source: string, output: string): boolean {
+  const stripImports = (s: string) =>
+    s
+      .split("\n")
+      .filter((l) => !/^\s*(import|from|const\s+\w+\s+=\s+require)/.test(l))
+      .join("\n");
+  const stripComments = (s: string) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const normalize = (s: string) => stripComments(stripImports(s)).replace(/\s+/g, " ").trim();
+  const a = normalize(source);
+  const b = normalize(output);
+  // If 80%+ of source bytes are present verbatim in output, mark trivial.
+  const overlap = a.length === 0 ? 0 : longestCommonSubstring(a, b).length / a.length;
+  return overlap > 0.8;
+}
+
+function longestCommonSubstring(a: string, b: string): string {
+  // Naive O(nm) DP — fine for test files (<10KB each).
+  const m = a.length;
+  const n = b.length;
+  if (m === 0 || n === 0) return "";
+  let maxLen = 0;
+  let endIdx = 0;
+  const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = (dp[i - 1][j - 1] ?? 0) + 1;
+        if ((dp[i][j] ?? 0) > maxLen) {
+          maxLen = dp[i][j] ?? 0;
+          endIdx = i;
+        }
+      }
+    }
+  }
+  return a.slice(endIdx - maxLen, endIdx);
+}
+
+// ---- Report writer.
+interface Report {
+  input: string;
+  output: string;
+  source: SmellCount;
+  outputSmells: SmellCount;
+  selector: SelectorMix;
+  selectorQuality: number;
+  webFirstRate: number;
+  forbidden: string[];
+  trivial: boolean;
+  confidence: PlanConfidence;
+  inputLoc: number;
+  outputLoc: number;
+}
+
+function renderReport(r: Report): string {
+  const deltaSmells: Record<string, number> = {};
+  for (const k of Object.keys(r.source) as (keyof SmellCount)[]) {
+    deltaSmells[k] = (r.outputSmells[k] ?? 0) - (r.source[k] ?? 0);
+  }
+  const smellTable = Object.entries(deltaSmells)
+    .map(([k, v]) => `| ${k} | ${r.source[k as keyof SmellCount]} | ${r.outputSmells[k as keyof SmellCount]} | ${v >= 0 ? "+" : ""}${v} |`)
+    .join("\n");
+  const totalConfidence = (r.confidence.aggregate * 0.6 + r.selectorQuality * 0.3 + r.webFirstRate * 0.1).toFixed(2);
+  return `# Migration report: ${basename(r.input)}
+
+## Source → Target
+- Source: \`${r.input}\` (${r.inputLoc} LOC)
+- Output: \`${r.output}\` (${r.outputLoc} LOC)
+- LOC delta: ${r.outputLoc - r.inputLoc >= 0 ? "+" : ""}${r.outputLoc - r.inputLoc}
+
+## Quality scores
+- **Aggregate confidence:** ${totalConfidence}
+- Selector quality: ${(r.selectorQuality * 100).toFixed(0)}% canonical (${r.selector.canonical} canonical / ${r.selector.fragile} fragile)
+- Web-first assertion rate: ${(r.webFirstRate * 100).toFixed(0)}%
+- Plan confidence: ${r.confidence.high} high / ${r.confidence.med} med / ${r.confidence.low} low → avg ${r.confidence.aggregate.toFixed(2)}
+
+## Smell count (source → output → delta)
+| Smell | Source | Output | Delta |
+|---|---|---|---|
+${smellTable}
+
+## Forbidden patterns in output
+${r.forbidden.length === 0 ? "✅ None." : r.forbidden.map((f) => `- ❌ \`${f}\``).join("\n")}
+
+## AST diff
+- **Trivial (cosmetic-only)?** ${r.trivial ? "❌ YES — REJECT THIS MIGRATION" : "✅ no"}
+
+## Recommended human checks
+1. Spot-check 2-3 LOW-confidence locator translations from the plan — do they match the real DOM?
+2. Run the migrated test against staging; verify it catches the same bugs as the source did.
+3. If verify report exists (\`outputs/reports/${basename(r.input)}-verify.md\`), read the disagreements section.
+`;
+}
+
+// ---- Main.
+function main(): void {
+  const args = parseCliArgs();
+  const inputSrc = readFileSync(args.input, "utf8");
+  const outputSrc = readFileSync(args.output, "utf8");
+  const planMd = readFileSync(args.plan, "utf8");
+
+  const sourceSmells = countSmells(inputSrc);
+  const outputSmells = countSmells(outputSrc);
+  const selector = selectorMix(outputSrc);
+  const selectorQuality = selectorQualityScore(selector);
+  const webFirstRate = webFirstAssertionRate(outputSrc);
+  const forbidden = findForbidden(outputSrc);
+  const trivial = isAstDiffTrivial(inputSrc, outputSrc);
+  const confidence = planConfidence(planMd);
+  const inputLoc = inputSrc.split("\n").length;
+  const outputLoc = outputSrc.split("\n").length;
+
+  const report: Report = {
+    input: args.input,
+    output: args.output,
+    source: sourceSmells,
+    outputSmells,
+    selector,
+    selectorQuality,
+    webFirstRate,
+    forbidden,
+    trivial,
+    confidence,
+    inputLoc,
+    outputLoc,
+  };
+
+  writeFileSync(args["report-out"], renderReport(report));
+
+  // Aggregate confidence to stdout — workflow consumes this.
+  const aggregate = confidence.aggregate * 0.6 + selectorQuality * 0.3 + webFirstRate * 0.1;
+  // Round to 2 decimals for clean comparison in workflow.
+  process.stdout.write(aggregate.toFixed(2));
+}
+
+main();

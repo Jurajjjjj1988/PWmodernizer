@@ -1,0 +1,78 @@
+# Verify — multi-model consensus check.
+#
+# Only triggered when migrate.yml emits an aggregate confidence < 0.7.
+# We invoke a SECOND LLM (Opus, more expensive) with prompts/verify.md to
+# cross-check the Sonnet-generated output. Disagreement on locator strategy
+# or assertion shape is flagged on the code PR.
+#
+# Why this gate: CANDOR (arXiv:2506.02943) showed multi-model consensus
+# filters hallucinations more reliably than prompt engineering — different
+# models hallucinate differently, so agreement is signal.
+
+name: Verify — multi-model consensus
+
+on:
+  workflow_dispatch:
+    inputs:
+      input_basename:
+        description: 'Basename of the input file (without dirs) to verify'
+        required: true
+        type: string
+      generate_confidence:
+        description: 'Aggregate confidence reported by Stage 2'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: main
+
+      - name: Run Claude Code (verify stage, Opus)
+        uses: anthropics/claude-code-action@8e4cb02b1c1a3a2a5e3b4c5d6e7f8090a1b2c3d4 # PIN ME — see README
+        with:
+          system_prompt_path: prompts/verify.md
+          additional_context_paths: |
+            config/migration-rules.md
+            outputs/plans/${{ inputs.input_basename }}.md
+            outputs/tests/${{ inputs.input_basename }}.spec.ts
+            outputs/reports/${{ inputs.input_basename }}.md
+          # Opus is worth the cost only on already-flagged migrations.
+          model: claude-opus-4-7
+          temperature: '0'
+          max_turns: '5'
+          allowed_tools: 'Read,Write'
+          required_output_path: outputs/reports/${{ inputs.input_basename }}-verify.md
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Find the code PR and comment with verify findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_BASENAME: ${{ inputs.input_basename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR_NUMBER=$(gh pr list --state open --label "migrator:code" \
+            --search "$INPUT_BASENAME" --json number --jq '.[0].number')
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            echo "::warning::No open code PR found for $INPUT_BASENAME — skipping comment"
+            exit 0
+          fi
+          REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
+          gh pr comment "$PR_NUMBER" --body-file "$REPORT"
+          # If the verify report's verdict is `block`, add a label.
+          VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | awk '{print $3}')
+          if [ "$VERDICT" = "block" ]; then
+            gh pr edit "$PR_NUMBER" --add-label "verify:block"
+          elif [ "$VERDICT" = "warn" ]; then
+            gh pr edit "$PR_NUMBER" --add-label "verify:warn"
+          fi

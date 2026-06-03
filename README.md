@@ -1,0 +1,224 @@
+# PWmodernizer
+
+> An LLM-driven pipeline that turns bad Playwright tests into clean modern Playwright TypeScript. Cypress and Selenium support land in Step 2 and Step 3.
+
+**Honest scope:** PWmodernizer is _assistive scaffolding_, not a deterministic test framework migrator. Each migration produces a markdown plan + generated code + a metrics report. **Human review is required** before merge. Quality target: 70% acceptable rate on the bad-Playwright corpus before opening Step 2 (Cypress).
+
+## Why this exists
+
+Existing tools either (a) trap you in a proprietary DSL (testRigor, Mabl, Functionize), or (b) do syntax-only mechanical conversion (cy2pw — _archived by the Playwright team in Sept 2025_). No serious source-code-in → source-code-out migrator exists for Playwright. We emit standard `.spec.ts` files you own, with a complete audit trail.
+
+Research backing this approach: Google FSE 2025 (`arxiv:2504.09691`) demonstrated multi-stage LLM-driven migration at scale, but **only 36% of changes landed pure-LLM** — 38% required human polish, 25% were human-only. We design accordingly — humans gate every stage in v0.
+
+## Phased build plan
+
+| Step | Source framework | Status | Target rollout |
+|---|---|---|---|
+| **Step 1** | Bad / outdated Playwright TypeScript | 🚧 In progress | v0 |
+| Step 2 | Cypress | ⏸ Pending Step 1 quality bar | v1 |
+| Step 3 | Selenium WebDriver (Java + Python) | ⏸ Pending DOM-grounding via playwright-mcp | v2 |
+
+The repo ships knowledge-base and rule content for **all 4** sources (bad-Playwright, Cypress, Selenium Java, Selenium Python) because they share most anti-pattern categories. The pipeline workflows fire on any input file regardless of subfolder. But our **quality bar gate is Step 1 only**: until we hit 70% acceptable migrations on bad-Playwright, we won't promote the other sources beyond example status.
+
+## Architecture overview
+
+```
+inputs/bad-playwright/foo.spec.ts
+            │
+            │  on: push, paths: inputs/**
+            ▼
+   ┌────────────────────┐
+   │  Stage 1 — Plan    │  Claude Sonnet 4.6 (cheap, good)
+   │  (plan.yml)        │  Reads:
+   └────────────────────┘    - config/knowledge-base.md (cached)
+            │                - config/migration-rules.md (cached)
+            │                - examples/reference/company-style.spec.ts (style anchor)
+            │                - the input file
+            ▼                Writes:
+   outputs/plans/foo.spec.ts.md   - the plan markdown
+            │
+            │  open PR labeled `migrator:plan`
+            │  HUMAN REVIEWS PLAN → edits if needed → merges
+            ▼
+   ┌────────────────────┐
+   │  Stage 2 — Generate │  Claude Sonnet 4.6
+   │  (migrate.yml)      │  Reads:
+   └────────────────────┘    - the approved plan
+            │                - input file, knowledge-base, rules
+            │                - examples/reference/company-style.spec.ts
+            │                Writes:
+            ▼                  - outputs/tests/foo.spec.ts
+   Validation gates:            - outputs/tests/pages/*.page.ts (if plan said extract)
+   - tsc --noEmit               - outputs/tests/fixtures/*.fixture.ts (if plan said extract)
+   - eslint-plugin-playwright   - outputs/reports/foo.spec.ts.md (metrics)
+   - playwright test --list
+   - ast-diff-not-trivial check
+   - evaluate.ts (emits aggregate confidence 0..1)
+            │
+            ├──► confidence ≥ 0.7 → open code PR (labeled `migrator:code`)
+            │
+            └──► confidence < 0.7 → trigger verify.yml
+                       │
+                       ▼
+                ┌────────────────────┐
+                │ Verify — consensus  │  Claude Opus 4.7 (expensive, only for low-confidence)
+                │ (verify.yml)        │  Reads: plan + output + report.
+                └────────────────────┘  Writes: outputs/reports/foo.spec.ts-verify.md
+                       │
+                       │  Comments on code PR with disagreements + verdict.
+                       │  Labels code PR `verify:block` or `verify:warn` if needed.
+                       ▼
+                HUMAN REVIEWS CODE PR → merges or sends back for regeneration
+```
+
+### Why this shape (the research distilled)
+
+- **2-stage plan → code** instead of one-shot: Stage 1 produces an auditable plan that humans can edit. Stage 2 follows that plan literally. This is the only LLM-only pattern that delivers _auditability_ (true determinism with LLMs is a myth — see `arxiv:2410.10628`).
+- **Validation cascade** after generation: tsc → eslint --fix → playwright parse → AST diff non-trivial → metrics. Per Google FSE 2025, multi-gate validation > prompt tuning.
+- **Confidence-aware routing**: cheap default (Sonnet), expensive verifier (Opus) only fires when needed. Multi-model consensus (CANDOR pattern, `arxiv:2506.02943`) filters hallucinations that prompt engineering can't.
+- **Reference style file**: `examples/reference/company-style.spec.ts` is the gold-standard target the migrator anchors output style on. Sogeti Skills methodology — the only honest published pattern in the AI-testing market.
+
+## Quickstart
+
+### Prerequisites
+
+- Node 22+
+- GitHub repository secrets (Settings → Secrets and variables → Actions):
+  - `ANTHROPIC_API_KEY` — **required**. Get one at https://console.anthropic.com/.
+  - `MIGRATION_TARGET_URL` — _optional_. If set, generation can ground locators against the live DOM via `playwright-mcp` (planned for v1; for v0 it's not yet wired).
+
+### Trigger your first migration
+
+1. Drop a bad Playwright spec into `inputs/bad-playwright/your-test.spec.ts`.
+2. Commit and push.
+3. **Stage 1 (`plan.yml`) fires automatically.** It produces `outputs/plans/your-test.spec.ts.md` and opens a PR labeled `migrator:plan`.
+4. **Review the plan.** Read every row in the locator translation table. Pay attention to MED and LOW confidence entries — these are the LLM's best guesses and may be wrong.
+5. Edit the plan in the PR if needed. The plan is a contract — Stage 2 follows it literally.
+6. Merge the plan PR.
+7. **Stage 2 (`migrate.yml`) fires automatically** on the merge. It produces:
+   - `outputs/tests/your-test.spec.ts` — the migrated Playwright code
+   - `outputs/tests/pages/*.page.ts` and `outputs/tests/fixtures/*.fixture.ts` — only if the plan said extract them
+   - `outputs/reports/your-test.spec.ts.md` — metrics report
+   - A second PR labeled `migrator:code` with the generated files
+8. **Review the code PR.** The PR description shows aggregate confidence + which validation gates passed. Read the migration report — selector quality score, smell deltas, AST-diff non-trivial flag.
+9. Pull the branch locally. Run `npx playwright test outputs/tests/your-test.spec.ts` against your staging app. Verify it catches the same bug class as the source did.
+10. Merge or send back for regeneration with feedback.
+
+## Repository structure
+
+```
+PWmodernizer/
+├── .github/workflows/
+│   ├── plan.yml             # Stage 1 — generates migration plan markdown
+│   ├── migrate.yml          # Stage 2 — generates Playwright TS code
+│   ├── verify.yml           # Multi-model consensus (only on low-confidence)
+│   └── lint-output.yml      # Standalone eslint on outputs/tests/**
+├── config/
+│   ├── migration-rules.md   # Target style + structure contract (~4,300 words, 85 rules)
+│   └── knowledge-base.md    # Anti-pattern catalog + API translation tables (~7,200 words, 52 anti-patterns, 155 mappings)
+├── prompts/
+│   ├── analyze.md           # Stage 1 system prompt
+│   ├── generate.md          # Stage 2 system prompt
+│   └── verify.md            # Verify-stage system prompt
+├── inputs/
+│   ├── bad-playwright/      # Step 1 — focus
+│   ├── cypress/             # Step 2 — content ready, gate closed
+│   ├── selenium-java/       # Step 3 — content ready, gate closed
+│   └── selenium-python/     # Step 3 — content ready, gate closed
+├── outputs/
+│   ├── plans/               # Stage 1 deliverables (per-input markdown)
+│   ├── tests/               # Stage 2 deliverables (the migrated code)
+│   │   └── tsconfig.json    # Strict mode + Playwright types
+│   └── reports/             # Per-migration metrics (one per input + optional -verify)
+├── examples/
+│   ├── reference/
+│   │   └── company-style.spec.ts  # The gold-standard target Claude anchors on
+│   ├── bad-playwright-01-flaky-waits/   # input + expected-output + expected-plan
+│   ├── bad-playwright-02-nth-selectors/
+│   ├── cypress-01-login-flow/           # Step 2 reference (not yet active)
+│   ├── cypress-02-form-validation/
+│   ├── selenium-java-01-search/         # Step 3 reference (not yet active)
+│   ├── selenium-java-02-checkout/
+│   ├── selenium-python-01-login/
+│   └── selenium-python-02-modal-interaction/
+├── scripts/
+│   ├── evaluate.ts                  # Emits per-migration metrics report
+│   └── ast-diff-trivial-check.ts    # Fails the build on cosmetic-only migrations
+├── tsconfig.json            # Strict TS root config (scripts)
+├── outputs/tests/tsconfig.json  # Strict TS for generated tests
+├── .eslintrc.cjs            # eslint-plugin-playwright + TS strictness
+├── package.json
+└── README.md                # You are here.
+```
+
+## Quality gates (what the pipeline enforces)
+
+Stage 2 will NOT open a code PR if any of these fail:
+
+- `tsc --noEmit` passes (strict mode, no `any`)
+- `eslint --fix` produces no remaining errors
+- `npx playwright test --list` enumerates the generated spec (it parses as a real Playwright test)
+- AST-diff-not-trivial check: rejects "migrations" where ≥80% of source bytes appear verbatim in the output (cosmetic-only fix)
+- No forbidden patterns: `waitForTimeout`, `force: true`, `.nth()`, `test.only`, `test.skip`, `page.pause()`, `: any`, `as unknown as`, `console.log`
+
+Stage 2 emits aggregate confidence (0..1):
+
+- **≥ 0.7**: opens code PR for human review.
+- **< 0.7**: triggers `verify.yml` (Opus second opinion). The verify report comments on the code PR; if it produces a `block` verdict, the code PR is labeled `verify:block` until a human resolves it.
+
+The aggregate confidence formula:
+```
+0.6 × plan_confidence + 0.3 × selector_quality + 0.1 × web_first_rate
+```
+
+## Known limitations (read before opening issues)
+
+- **Pure-LLM landed rate is 36%** in Google's industrial study. Plan accordingly — you WILL spend time reviewing.
+- **Selector hallucinations** are the #1 failure mode without DOM access. Until `playwright-mcp` grounding lands in v1, every locator that wasn't a direct ID/testid translation carries LOW or MED confidence by design.
+- **Magic Number Test smell** appears in 99.85% of LLM-generated unit tests (`arxiv:2410.10628`). We post-process with smell detection but don't promise to catch all instances.
+- **Pre-existing test failures in your target app** make pass/fail signal unreliable. Record a baseline before migrating.
+- **Selenium Java/Python are Step 3** for a reason — no public migrator exists for them. The cross-language + cross-paradigm gap is real. We mark every Selenium locator as LOW confidence.
+- **CodeBLEU is NOT used as a quality metric** — research (`arxiv:2506.06767`) showed it penalizes good renames. We use selector quality + smell deltas + AST non-triviality instead.
+
+## Costs
+
+The pipeline uses Anthropic prompt caching. Knowledge-base + migration-rules + reference style (~13k tokens combined) cache at 0.1× the input price. A typical 60-line bad-Playwright migration costs roughly:
+
+- Stage 1 (Sonnet): ~0.05 USD
+- Stage 2 (Sonnet): ~0.10 USD
+- Verify (Opus, only ~25% of migrations): ~0.30 USD
+
+Realistic: **$0.15–0.40 per migration**, ceiling $0.50.
+
+## Anti-patterns we explicitly do NOT promise
+
+The commercial AI testing market is full of these. Migrator does not do them:
+
+- ❌ "Full code export" theatre (the export is unmaintainable)
+- ❌ NL-DSL lock-in (output is real Playwright TypeScript)
+- ❌ Self-healing oversold ("works on minor changes" is the disclaimer hidden in their FAQs)
+- ❌ Hidden per-seat / per-run / per-SKU pricing (we are OSS)
+- ❌ Live-mode "AI fixing flaky tests in your CI" — that's a different product
+
+## Contributing
+
+PRs that improve `config/migration-rules.md`, `config/knowledge-base.md`, `examples/reference/company-style.spec.ts`, or `prompts/*.md` directly improve every future migration. PRs that add new validation gates to `scripts/` raise the quality floor.
+
+PRs that add a new input source (Cypress, Selenium) should also include 2+ seed examples in `examples/` and unlock the gate in `README.md` only after the bad-Playwright corpus hits the 70% bar.
+
+## License
+
+MIT. See `LICENSE`.
+
+## References
+
+- Google FSE 2025 — Migrating Code At Scale With LLMs At Google: https://arxiv.org/abs/2504.09691
+- Test smells in LLM-generated unit tests: https://arxiv.org/abs/2410.10628
+- Testing Framework Migration with LLMs (AST 2026): https://arxiv.org/pdf/2602.02964
+- CANDOR (multi-agent consensus): https://arxiv.org/abs/2506.02943
+- CTSES (similarity metric that doesn't penalize good renames): https://arxiv.org/abs/2506.06767
+- AIMigrate (diff-context migration): https://arxiv.org/abs/2511.00160
+- Playwright official docs: https://playwright.dev
+- eslint-plugin-playwright: https://github.com/playwright-community/eslint-plugin-playwright
+- Microsoft playwright-mcp: https://github.com/microsoft/playwright-mcp
+- Sogeti Skills methodology: https://labs.sogeti.com/from-test-case-to-running-playwright-spec-how-skills-make-agentic-ai-test-automation-efficient/
