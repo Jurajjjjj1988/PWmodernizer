@@ -7,12 +7,17 @@
   "scripts": {
     "evaluate": "tsx scripts/evaluate.ts",
     "check:trivial": "tsx scripts/ast-diff-trivial-check.ts",
+    "check:kb": "tsx scripts/kb-validate.ts",
+    "check:examples": "tsx scripts/validate-examples.ts --warn",
+    "check:assemble": "tsx scripts/assemble-prompts.ts --check",
+    "check:envelope": "tsx scripts/plan-envelope-validate.ts --envelope examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json",
     "assemble-prompts": "tsx scripts/assemble-prompts.ts --write",
     "calibrate": "tsx tools/calibrate-pipeline/run-calibration.ts",
     "lint": "eslint 'outputs/tests/**/*.ts'",
     "lint:fix": "eslint --fix 'outputs/tests/**/*.ts'",
     "typecheck": "tsc --noEmit -p outputs/tests/tsconfig.json",
-    "test:parse": "playwright test --list outputs/tests/**/*.spec.ts"
+    "test:parse": "playwright test --list outputs/tests/**/*.spec.ts",
+    "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run calibrate"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
