@@ -172,14 +172,11 @@ jobs:
               HAS_TEST_MARKER=1
             fi
           done
-          # Size bounds: 200B floor (empty/stub), 100KB ceiling (LLM context budget).
-          # For dir inputs the ceiling is per-unit, not per-file.
+          # Size floor: 200B (empty/stub). Upper bound moved to token-based gate
+          # below — bytes over-reject boilerplate that tokenizes small (per agent
+          # research: 150KB boilerplate can tokenize to 20K tokens).
           if [ "$TOTAL_BYTES" -lt 200 ]; then
             echo "::error::Input too small ($TOTAL_BYTES bytes < 200). Empty or stub file."
-            exit 1
-          fi
-          if [ "$TOTAL_BYTES" -gt 102400 ]; then
-            echo "::error::Input too large ($TOTAL_BYTES bytes > 100 KB). Split into smaller test units; LLM context budget + KB catalog will not fit reliably."
             exit 1
           fi
           # Token estimate cap: chars/4 ≈ tokens for typical English+code mix.
@@ -298,6 +295,15 @@ jobs:
           # 12 chars is non-secret prefix (format indicator only).
           echo "Token prefix (first 12 chars): ${TRIMMED:0:12}..."
           claude --version || echo "(claude --version failed)"
+
+      # v0.5 follow-up: insert a `npm run assemble-prompts` step here to expand
+      # {{include:_fragments/*.md}} markers in prompts/ into prompts/_assembled/,
+      # then point the Claude step below at the assembled copy. Today
+      # (v0.4) only prompts/generate.md uses an include marker, and the file
+      # still works standalone because Claude reads the marker as plain text in
+      # the rare case the include target is unreachable. Once analyze.md and
+      # verify.md also adopt fragments, the assemble step becomes mandatory.
+      # See scripts/assemble-prompts.ts and prompts/_fragments/ for the design.
 
       - name: Run Claude (analyze stage)
         if: steps.dedup.outputs.skip == 'false'
