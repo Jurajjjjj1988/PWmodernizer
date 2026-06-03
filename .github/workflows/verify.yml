@@ -45,7 +45,9 @@ jobs:
 
       - name: Run Claude (verify stage, Opus)
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Token starts with sk-ant- → it's an API key, not an OAuth token,
+          # so use ANTHROPIC_API_KEY env name.
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           INPUT_BASENAME: ${{ inputs.input_basename }}
         run: |
           set -euo pipefail

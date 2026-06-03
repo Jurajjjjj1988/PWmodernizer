@@ -136,7 +136,10 @@ jobs:
       - name: Run Claude (analyze stage)
         if: steps.dedup.outputs.skip == 'false'
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Token starts with sk-ant- → it's an API key, not an OAuth token,
+          # so use ANTHROPIC_API_KEY env name. Trim whitespace to defend
+          # against paste-with-trailing-newline.
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           INPUT_PATH: ${{ matrix.input_path }}
           OUTPUT_PATH: outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md
         run: |
