@@ -137,6 +137,16 @@ jobs:
           set -euo pipefail
           npx tsc --noEmit -p tsconfig.json
 
+      - name: Plan envelope schema validates
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keeps scripts/plan-envelope.schema.json and the canonical example
+          # envelope in sync. Opt-in for v0.4 (not yet wired into plan.yml /
+          # migrate.yml). See scripts/plan-envelope-validate.ts header for the
+          # LPW (arXiv 2411.14503) / Routine (arXiv 2507.14447) background.
+          npx tsx scripts/plan-envelope-validate.ts --envelope examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json
+
       - name: Verify verdict ladder consistency
         shell: bash
         run: |

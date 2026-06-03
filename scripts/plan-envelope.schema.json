@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Jurajjjjj1988/PWmodernizer/scripts/plan-envelope.schema.json",
+  "title": "PWmodernizer Plan Envelope",
+  "description": "Machine-readable sidecar to the human-readable expected-plan.md. Implements the LPW (arXiv 2411.14503) / Routine (arXiv 2507.14447) inter-stage contract: a structured plan that Stage 2 (code generation) can be verified against. The markdown plan remains the reviewer-facing UX layer; this envelope is the validatable contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "inputBasename",
+    "sourceFramework",
+    "subtractive",
+    "scenarios",
+    "requiredPOMs",
+    "requiredFixtures",
+    "locatorTable",
+    "hallucinationDefensePins",
+    "expectedMetrics"
+  ],
+  "properties": {
+    "inputBasename": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Basename of the source input. For single-file inputs this is the filename (e.g. 'input.spec.ts'). For multi-file inputs (directory inputs) this is the directory basename (e.g. 'input'). Stage 2 uses this to anchor the plan to a specific source unit.",
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "sourceFramework": {
+      "type": "string",
+      "enum": [
+        "bad-playwright",
+        "selenium-java",
+        "selenium-python",
+        "cypress"
+      ],
+      "description": "Framework the source input is written in. 'bad-playwright' is a subtractive migration (no framework translation, only smell removal). The other three require a framework translation."
+    },
+    "subtractive": {
+      "type": "boolean",
+      "description": "True iff sourceFramework === 'bad-playwright'. Validator enforces this invariant. Subtractive migrations cannot legally introduce new framework imports; non-subtractive migrations must."
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Test scenarios the generated spec must cover. Every id MUST appear as exactly one `// plan:scenario=<id>` comment in the generated test file.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "userAction", "expectedAssertions"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+$",
+            "description": "Stable scenario identifier in N.M form (e.g. '1.1', '1.2'). Referenced by `// plan:scenario=<id>` comments in generated code."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable scenario title. Should match the eventual test('...') name in the generated spec."
+          },
+          "userAction": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One-sentence summary of what the test does from the user's perspective."
+          },
+          "expectedAssertions": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Observable outcomes the generated test MUST check. Corresponds to the User-perceivable assertion checklist in the markdown plan.",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "requiredPOMs": {
+      "type": "array",
+      "description": "Page Object Model file paths Stage 2 must produce, relative to repo root (e.g. 'outputs/tests/pages/login.page.ts'). Empty array when no POM extraction is justified.",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/tests/pages/[A-Za-z0-9._/-]+\\.page\\.ts$"
+      }
+    },
+    "requiredFixtures": {
+      "type": "array",
+      "description": "Fixture file paths Stage 2 must produce (e.g. 'outputs/tests/fixtures/auth.fixture.ts'). Empty array when fixture extraction is not justified.",
+      "items": {
+        "type": "string",
+        "pattern": "^outputs/tests/fixtures/[A-Za-z0-9._/-]+\\.fixture\\.ts$"
+      }
+    },
+    "locatorTable": {
+      "type": "array",
+      "description": "Locator translation table: original locator strings mapped to their modern Playwright replacements with reviewer-readable confidence.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["original", "target", "confidence"],
+        "properties": {
+          "original": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Original locator from the source (e.g. 'page.locator(\"#email\")')."
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Modern Playwright replacement (e.g. 'page.getByLabel(/email/i)')."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "med", "low"],
+            "description": "Reviewer's confidence that the translation is correct without DOM inspection. 'low' MUST be backed by a hallucination-defense pin."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Free-form reviewer notes — DOM assumptions, fallbacks, etc."
+          }
+        }
+      }
+    },
+    "hallucinationDefensePins": {
+      "type": "array",
+      "description": "Explicit hallucination guards. Each pin documents an assumption Stage 2 is making about the runtime DOM, with a reviewer-fallback if the assumption is wrong.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pinId",
+          "elementDescription",
+          "assumedLocator",
+          "sourceLocator",
+          "whyComment",
+          "reviewerFallback"
+        ],
+        "properties": {
+          "pinId": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sequential pin number, unique within the envelope."
+          },
+          "elementDescription": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable description of the pinned element (e.g. 'Dashboard greeting')."
+          },
+          "assumedLocator": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Locator Stage 2 will emit assuming the DOM matches expectations."
+          },
+          "sourceLocator": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Original locator from the source (preserved as fallback)."
+          },
+          "whyComment": {
+            "type": "string",
+            "minLength": 1,
+            "description": "WHY-comment Stage 2 must emit inline near the assumed locator, explaining the DOM assumption."
+          },
+          "reviewerFallback": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Concrete action the reviewer should take if the assumption fails (e.g. 'ask FE team to add data-testid=\"dashboard-greeting\"')."
+          }
+        }
+      }
+    },
+    "expectedMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selectorQualityScore",
+        "smellCountDelta",
+        "locDelta",
+        "antiPatternCoverage"
+      ],
+      "description": "Quantitative targets Stage 2's output is expected to hit. Used by scripts/evaluate.ts to score the migration.",
+      "properties": {
+        "selectorQualityScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of locators using role/label/testid (vs CSS class / nth). 0.0-1.0."
+        },
+        "smellCountDelta": {
+          "type": "integer",
+          "maximum": 0,
+          "description": "Net change in smell count. Must be <= 0 (migrations never introduce smells)."
+        },
+        "locDelta": {
+          "type": "integer",
+          "description": "Net change in lines of code (output - input). Negative for typical subtractive migrations, positive when POM extraction adds files."
+        },
+        "antiPatternCoverage": {
+          "type": "string",
+          "pattern": "^[0-9]+/[0-9]+$",
+          "description": "'addressed/total' anti-pattern coverage (e.g. '14/14')."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "sourceFramework": { "const": "bad-playwright" }
+        }
+      },
+      "then": {
+        "properties": {
+          "subtractive": { "const": true }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "sourceFramework": { "const": "bad-playwright" }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "subtractive": { "const": false }
+        }
+      }
+    }
+  ]
+}

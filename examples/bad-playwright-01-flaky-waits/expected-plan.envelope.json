@@ -1,0 +1,91 @@
+{
+  "inputBasename": "input.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "signs in with valid credentials @positive",
+      "userAction": "Fill the Acme Shop login form with valid credentials and click Sign in, expecting a dashboard greeting personalised for the user.",
+      "expectedAssertions": [
+        "dashboard greeting is visible after submit",
+        "greeting text matches /welcome back, jane/i"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "rejects an invalid password @negative",
+      "userAction": "Fill the login form with a valid email and a wrong password, click Sign in, and expect the error banner to surface without leaving /login.",
+      "expectedAssertions": [
+        "error banner (role=alert) contains /invalid credentials/i",
+        "URL still matches /\\/login/ after submit (no redirect)"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('#email')",
+      "target": "page.getByLabel(/email/i)",
+      "confidence": "med",
+      "notes": "Assumes input has an associated <label>. Fall back to getByRole('textbox', { name: 'Email' })."
+    },
+    {
+      "original": "page.locator('#password')",
+      "target": "page.getByLabel(/password/i)",
+      "confidence": "med",
+      "notes": "Same assumption as Email."
+    },
+    {
+      "original": "page.getByText('Sign in')",
+      "target": "page.getByRole('button', { name: /sign in/i })",
+      "confidence": "high",
+      "notes": "Submit button — role-based avoids matching page heading."
+    },
+    {
+      "original": "page.locator('.dashboard-greeting')",
+      "target": "page.getByRole('heading', { name: /welcome back/i })",
+      "confidence": "low",
+      "notes": "Greeting MAY be a heading; if it's a div with no role, keep CSS class and add WHY-comment. See pin 1."
+    },
+    {
+      "original": "page.locator('.error-banner')",
+      "target": "page.getByRole('alert')",
+      "confidence": "med",
+      "notes": "Login error banners typically use role=\"alert\". Fall back to getByTestId('login-error') if not. See pin 2."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Dashboard greeting",
+      "assumedLocator": "page.getByRole('heading', { name: /welcome back/i })",
+      "sourceLocator": "page.locator('.dashboard-greeting')",
+      "whyComment": "Q3 unresolved: greeting element type unknown — assumed heading role.",
+      "reviewerFallback": "Ask FE team for heading semantics OR request data-testid=\"dashboard-greeting\"."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Login error banner",
+      "assumedLocator": "page.getByRole('alert')",
+      "sourceLocator": "page.locator('.error-banner')",
+      "whyComment": "Q4: alert role not confirmed — assumed role=\"alert\" on the banner.",
+      "reviewerFallback": "Ask team to add role=\"alert\" or switch to getByTestId('login-error')."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Invalid-login 7s wait",
+      "assumedLocator": "await expect(page.getByRole('alert')).toContainText(/invalid credentials/i, { timeout: 10000 })",
+      "sourceLocator": "page.waitForTimeout(7000)",
+      "whyComment": "Q5: 7s defensive over-wait assumed — actual backend latency unverified.",
+      "reviewerFallback": "If backend genuinely needs >5s (rate-limit cooldown), Stage 2 must raise per-assertion timeout to 10s rather than removing the wait silently."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.78,
+    "smellCountDelta": -14,
+    "locDelta": -10,
+    "antiPatternCoverage": "14/14"
+  }
+}
