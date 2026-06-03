@@ -33,11 +33,24 @@ export default [
       'playwright/no-skipped-test': 'error',
       'playwright/no-focused-test': 'error',
       'playwright/no-conditional-in-test': 'error',
+      'playwright/no-conditional-expect': 'error',
       'playwright/no-page-pause': 'error',
       'playwright/expect-expect': 'error',
       'playwright/missing-playwright-await': 'error',
       'playwright/no-useless-await': 'warn',
       'playwright/prefer-web-first-assertions': 'error',
+      // Research-backed additions (eslint-plugin-playwright v2.x):
+      'playwright/prefer-native-locators': 'error', // auto-fix locator('[role="..."]') → getByRole(...)
+      'playwright/no-raw-locators': 'warn',         // discourages page.locator(...) when getBy* fits
+      'playwright/no-element-handle': 'error',      // blocks deprecated $() / $$()
+      'playwright/no-eval': 'error',                // blocks page.$eval / page.$$eval
+      'playwright/no-networkidle': 'error',         // blocks waitForLoadState('networkidle')
+      'playwright/no-wait-for-selector': 'error',   // anti-flake, prefer web-first assertion
+      'playwright/no-wait-for-navigation': 'error', // anti-flake
+      'playwright/no-unsafe-references': 'error',   // catches closures in page.evaluate (Selenium migrant bug)
+      'playwright/valid-expect-in-promise': 'error', // forgotten await inside promise chain
+      'playwright/require-top-level-describe': 'warn',
+      'playwright/max-nested-describe': ['error', { max: 2 }], // mirrors migration-rules §2 max 2 describe levels
       // TypeScript anti-patterns — generate.md hard rules forbid `any` and `as unknown as`.
       '@typescript-eslint/no-explicit-any': 'error',
       'no-console': 'error',

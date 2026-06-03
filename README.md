@@ -178,7 +178,8 @@ The aggregate confidence formula:
 - **Magic Number Test smell** appears in 99.85% of LLM-generated unit tests (`arxiv:2410.10628`). We post-process with smell detection but don't promise to catch all instances.
 - **Pre-existing test failures in your target app** make pass/fail signal unreliable. Record a baseline before migrating.
 - **Selenium Java/Python are Step 3** for a reason — no public migrator exists for them. The cross-language + cross-paradigm gap is real. We mark every Selenium locator as LOW confidence.
-- **CodeBLEU is NOT used as a quality metric** — research (`arxiv:2506.06767`) showed it penalizes good renames. We use selector quality + smell deltas + AST non-triviality instead.
+- **CodeBLEU is NOT used as a quality metric** — superseded by CodeBERTScore (semantic) + CrystalBLEU (n-gram with trivial-grams stripped). We use selector quality + smell deltas + AST non-triviality (ts-morph + Zhang-Shasha) + execution-based mutation-kill-rate as primary signal.
+- **Realistic accuracy ceiling is ~85%** — Microsoft ISE case study + multiple independent reports (Stagehand→Playwright, GitHub Copilot Workspace) all converge on 85% as the LLM-generated-Playwright-code correctness bound. The remaining 15% requires human review per migration. Plan downstream review capacity accordingly — don't promise 100%.
 
 ## Costs
 
@@ -216,7 +217,12 @@ MIT. See `LICENSE`.
 - Test smells in LLM-generated unit tests: https://arxiv.org/abs/2410.10628
 - Testing Framework Migration with LLMs (AST 2026): https://arxiv.org/pdf/2602.02964
 - CANDOR (multi-agent consensus): https://arxiv.org/abs/2506.02943
-- CTSES (similarity metric that doesn't penalize good renames): https://arxiv.org/abs/2506.06767
+- CodeBERTScore (semantic code similarity, supersedes CodeBLEU): https://arxiv.org/abs/2302.05527
+- CrystalBLEU (strips trivially-shared n-grams, 4× distinguishability over CodeBLEU): ASE 2022, https://software-lab.org/publications/ase2022_CrystalBLEU.pdf
+- Test-migration accuracy ceiling — ~85% LLM-correct, requires human review (Microsoft ISE case study + multiple independent reports): https://devblogs.microsoft.com/ise/app-modernization-llm-driven-ui-tests-hve/
+- LLM code-generation hallucination taxonomy (3 categories, 12 subtypes): https://arxiv.org/abs/2404.00971
+- Plan-and-Act (planner/executor pattern, no formal contract): https://arxiv.org/abs/2503.09572
+- LPW Planning-Driven Programming (plan-verification as plan-vs-code contract): https://arxiv.org/abs/2411.14503
 - AIMigrate (diff-context migration): https://arxiv.org/abs/2511.00160
 - Playwright official docs: https://playwright.dev
 - eslint-plugin-playwright: https://github.com/playwright-community/eslint-plugin-playwright
