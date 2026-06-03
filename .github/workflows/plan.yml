@@ -100,44 +100,61 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        if: steps.dedup.outputs.skip == 'false'
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code CLI
+        if: steps.dedup.outputs.skip == 'false'
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Run Claude (analyze stage)
         if: steps.dedup.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@36a69b6a90b850823f86de06fdfd56264772ad98 # main as of 2026-06-02
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            You are running Stage 1 of the PWmodernizer pipeline.
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          INPUT_PATH: ${{ matrix.input_path }}
+          OUTPUT_PATH: outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md
+        run: |
+          set -euo pipefail
+          # Build the prompt and invoke claude CLI in print (non-interactive)
+          # mode. Claude reads context files via its own Read tool and writes
+          # the deliverable via its Write tool. Output goes to OUTPUT_PATH.
+          PROMPT=$(cat <<EOF
+          You are running Stage 1 of the PWmodernizer pipeline.
 
-            ## Your task
+          ## Your task
 
-            Read `prompts/analyze.md` — that's your full system prompt and
-            task description. Follow it exactly.
+          Read prompts/analyze.md — that's your full system prompt and task
+          description. Follow it exactly.
 
-            ## Input for this run
+          ## Input for this run
 
-            - Input test file to analyze: `${{ matrix.input_path }}`
-            - Output plan path to write: `outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md`
+          - Input test file: $INPUT_PATH
+          - Output plan path to write: $OUTPUT_PATH
 
-            ## Context to load (in this order)
+          ## Context to load (in this order)
 
-            1. `prompts/analyze.md` — your task spec (READ FIRST)
-            2. `config/migration-rules.md` — target style + structure contract
-            3. `config/knowledge-base.md` — anti-pattern catalog + API translation tables
-            4. `examples/reference/company-style.spec.ts` — gold-standard target style anchor
-            5. `${{ matrix.input_path }}` — the input to migrate
+          1. prompts/analyze.md — your task spec (READ FIRST)
+          2. config/migration-rules.md — target style + structure contract
+          3. config/knowledge-base.md — anti-pattern catalog + API translations
+          4. examples/reference/company-style.spec.ts — style anchor
+          5. $INPUT_PATH — the input to migrate
 
-            ## Deliverable
+          ## Deliverable
 
-            ONE markdown file at the exact output path above. NO code
-            generation — this stage only produces the plan. Follow the plan
-            schema in `config/migration-rules.md` §9 — every section must be
-            present.
-
-            Mark each locator translation with HIGH / MED / LOW confidence
-            per the hallucination-defense rules in `prompts/analyze.md`.
-          claude_args: |
-            --model claude-sonnet-4-6
-            --max-turns 8
+          ONE markdown file at $OUTPUT_PATH. NO code generation. Follow the
+          plan schema in config/migration-rules.md §9 — every section must
+          be present. Mark each locator translation with HIGH / MED / LOW
+          confidence per prompts/analyze.md hallucination-defense rules.
+          EOF
+          )
+          claude \
+            --model claude-sonnet-4-6 \
+            --max-turns 12 \
+            --print \
+            --permission-mode acceptEdits \
+            "$PROMPT"
 
       - name: Validate plan structure
         if: steps.dedup.outputs.skip == 'false'

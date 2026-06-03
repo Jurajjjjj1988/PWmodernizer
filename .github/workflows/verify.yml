@@ -36,45 +36,60 @@ jobs:
         with:
           ref: main
 
-      - name: Run Claude (verify stage, Opus)
-        uses: anthropics/claude-code-action@36a69b6a90b850823f86de06fdfd56264772ad98 # main as of 2026-06-02
+      - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            You are running the Verify stage of the PWmodernizer pipeline as
-            a SECOND-OPINION verifier on a Sonnet-generated migration.
+          node-version: '22'
 
-            ## Your task
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
 
-            Read `prompts/verify.md` — that's your full system prompt and
-            task description. Follow it exactly. Be picky on locators and
-            oracles (hallucinated tests are high-cost); be lenient on
-            cosmetic/stylistic differences.
+      - name: Run Claude (verify stage, Opus)
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          INPUT_BASENAME: ${{ inputs.input_basename }}
+        run: |
+          set -euo pipefail
+          PROMPT=$(cat <<EOF
+          You are running the Verify stage of the PWmodernizer pipeline as
+          a SECOND-OPINION verifier on a Sonnet-generated migration.
 
-            ## Input for this run
+          ## Your task
 
-            - Plan that was approved: `outputs/plans/${{ inputs.input_basename }}.md`
-            - Sonnet's generated output: `outputs/tests/${{ inputs.input_basename }}`
-            - Sonnet's migration report: `outputs/reports/${{ inputs.input_basename }}.md`
-            - Where to write your verify report: `outputs/reports/${{ inputs.input_basename }}-verify.md`
+          Read prompts/verify.md — that's your full system prompt. Follow
+          it exactly. Be picky on locators and oracles (hallucinated tests
+          are high-cost); be lenient on cosmetic/stylistic differences.
 
-            ## Context to load
+          ## Input for this run
 
-            1. `prompts/verify.md` — your task spec (READ FIRST)
-            2. `config/migration-rules.md` — what "good" looks like
-            3. `outputs/plans/${{ inputs.input_basename }}.md`
-            4. `outputs/tests/${{ inputs.input_basename }}`
-            5. `outputs/reports/${{ inputs.input_basename }}.md`
+          - Approved plan: outputs/plans/$INPUT_BASENAME.md
+          - Sonnet's output: outputs/tests/$INPUT_BASENAME
+          - Sonnet's report: outputs/reports/$INPUT_BASENAME.md
+          - Your verify report path: outputs/reports/$INPUT_BASENAME-verify.md
 
-            ## Deliverable
+          ## Context to load
 
-            ONE markdown file at the verify report path. Schema is defined
-            in `prompts/verify.md`. Verdict line MUST be one of:
-            `- Verdict: consensus`, `- Verdict: info`, `- Verdict: warn`,
-            or `- Verdict: block`.
-          claude_args: |
-            --model claude-opus-4-7
-            --max-turns 8
+          1. prompts/verify.md — your task spec (READ FIRST)
+          2. config/migration-rules.md — what "good" looks like
+          3. outputs/plans/$INPUT_BASENAME.md
+          4. outputs/tests/$INPUT_BASENAME
+          5. outputs/reports/$INPUT_BASENAME.md
+
+          ## Deliverable
+
+          ONE markdown file at the verify report path. Schema in
+          prompts/verify.md. Verdict line MUST be one of:
+          - Verdict: consensus
+          - Verdict: info
+          - Verdict: warn
+          - Verdict: block
+          EOF
+          )
+          claude \
+            --model claude-opus-4-7 \
+            --max-turns 12 \
+            --print \
+            --permission-mode acceptEdits \
+            "$PROMPT"
 
       - name: Comment verify findings on code PR
         env:

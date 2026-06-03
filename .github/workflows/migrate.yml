@@ -79,66 +79,68 @@ jobs:
 
       - run: npm ci
 
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Run Claude (generate stage)
-        uses: anthropics/claude-code-action@36a69b6a90b850823f86de06fdfd56264772ad98 # main as of 2026-06-02
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            You are running Stage 2 of the PWmodernizer pipeline.
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          INPUT_PATH: ${{ needs.guard.outputs.input_path }}
+          PLAN_PATH: ${{ needs.guard.outputs.plan_path }}
+          INPUT_BASENAME: ${{ needs.guard.outputs.input_basename }}
+        run: |
+          set -euo pipefail
+          PROMPT=$(cat <<EOF
+          You are running Stage 2 of the PWmodernizer pipeline.
 
-            ## Your task
+          ## Your task
 
-            Read `prompts/generate.md` — that's your full system prompt and
-            task description. Follow it exactly. The plan was already
-            human-approved; your job is to execute it faithfully.
+          Read prompts/generate.md — that's your full system prompt. Follow
+          it exactly. The plan was already human-approved; execute it
+          faithfully.
 
-            ## Input for this run
+          ## Input for this run
 
-            - Source input file: `${{ needs.guard.outputs.input_path }}`
-            - Approved migration plan: `${{ needs.guard.outputs.plan_path }}`
-            - Output spec file path: `outputs/tests/${{ needs.guard.outputs.input_basename }}`
-              (write the migrated Playwright TS here — the `.spec.ts` suffix
-              is already part of the basename for Playwright sources; preserve
-              the basename verbatim)
-            - Output migration report path: `outputs/reports/${{ needs.guard.outputs.input_basename }}.md`
+          - Source input: $INPUT_PATH
+          - Approved plan: $PLAN_PATH
+          - Output spec path: outputs/tests/$INPUT_BASENAME
+          - Output report path: outputs/reports/$INPUT_BASENAME.md
 
-            ## Context to load (in this order)
+          ## Context to load (in this order)
 
-            1. `prompts/generate.md` — your task spec (READ FIRST)
-            2. `${{ needs.guard.outputs.plan_path }}` — the approved plan; follow it literally
-            3. `config/migration-rules.md` — target style + structure contract
-            4. `config/knowledge-base.md` — anti-pattern catalog + API translation tables
-            5. `examples/reference/company-style.spec.ts` — style anchor
-            6. `${{ needs.guard.outputs.input_path }}` — the source to migrate
+          1. prompts/generate.md — your task spec (READ FIRST)
+          2. $PLAN_PATH — the approved plan; follow it literally
+          3. config/migration-rules.md — style + structure contract
+          4. config/knowledge-base.md — anti-pattern + API translations
+          5. examples/reference/company-style.spec.ts — style anchor
+          6. $INPUT_PATH — the source to migrate
 
-            ## Deliverables
+          ## Deliverables (write ONLY these files)
 
-            Write these files (and ONLY these):
+          - outputs/tests/$INPUT_BASENAME — migrated Playwright TS
+          - outputs/tests/pages/<name>.page.ts — POM IF plan said extract
+          - outputs/tests/fixtures/<name>.fixture.ts — fixture IF plan said extract
+          - outputs/reports/$INPUT_BASENAME.md — migration report
 
-            - `outputs/tests/${{ needs.guard.outputs.input_basename }}` — the
-              migrated Playwright TS
-            - `outputs/tests/pages/<name>.page.ts` — POM files IF the plan
-              said to extract them
-            - `outputs/tests/fixtures/<name>.fixture.ts` — fixture files IF
-              the plan said to extract them
-            - `outputs/reports/${{ needs.guard.outputs.input_basename }}.md`
-              — migration report (see `prompts/generate.md` for the schema)
+          Do NOT modify inputs/, config/, or prompts/.
 
-            Do NOT modify `inputs/**`, `config/**`, or `prompts/**`.
+          ## Hard rules
 
-            ## Hard rules
-
-            - Web-first assertions only (`await expect(locator).toX()`)
-            - No `waitForTimeout`, `force: true`, `.nth(N)`, `test.only`,
-              `test.skip`, `page.pause()`, `: any`, `as unknown as`,
-              `console.log`
-            - Add the attribution comment at top:
-              `// Migrated by PWmodernizer on YYYY-MM-DD from {source-framework}. See ${{ needs.guard.outputs.plan_path }} for plan.`
-            - If the plan looks wrong, FAIL LOUDLY in the migration report —
-              do not silently fix it.
-          claude_args: |
-            --model claude-sonnet-4-6
-            --max-turns 15
+          - Web-first assertions only
+          - No waitForTimeout, force:true, .nth(N), test.only, test.skip,
+            page.pause(), :any, as unknown as, console.log
+          - Add attribution comment at top:
+            // Migrated by PWmodernizer on YYYY-MM-DD from {source}. See $PLAN_PATH for plan.
+          - If the plan looks wrong, FAIL LOUDLY in the report — do NOT
+            silently fix it.
+          EOF
+          )
+          claude \
+            --model claude-sonnet-4-6 \
+            --max-turns 20 \
+            --print \
+            --permission-mode acceptEdits \
+            "$PROMPT"
 
       - name: Typecheck generated tests
         shell: bash
