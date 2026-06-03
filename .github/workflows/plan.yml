@@ -129,21 +129,29 @@ jobs:
           if [ "$LEN" -ne "$TLEN" ]; then
             echo "::warning::Token contains whitespace/newline characters — likely paste issue"
           fi
-          # Print first 4 chars only so we can verify the prefix format.
-          echo "Token prefix (first 4 chars): ${TRIMMED:0:4}..."
+          # Print first 12 chars to distinguish sk-ant-api03- vs sk-ant-oat01-.
+          # 12 chars is non-secret prefix (format indicator only).
+          echo "Token prefix (first 12 chars): ${TRIMMED:0:12}..."
           claude --version || echo "(claude --version failed)"
 
       - name: Run Claude (analyze stage)
         if: steps.dedup.outputs.skip == 'false'
         env:
-          # Token starts with sk-ant- → it's an API key, not an OAuth token,
-          # so use ANTHROPIC_API_KEY env name. Trim whitespace to defend
-          # against paste-with-trailing-newline.
-          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Trim whitespace + auto-route by token prefix. sk-ant-api → API key
+          # (ANTHROPIC_API_KEY); sk-ant-oat → OAuth token (CLAUDE_CODE_OAUTH_TOKEN).
+          RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           INPUT_PATH: ${{ matrix.input_path }}
           OUTPUT_PATH: outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md
         run: |
           set -euo pipefail
+          TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
+          PREFIX="${TOKEN:0:12}"
+          echo "Detected token prefix: ${PREFIX}..."
+          case "$PREFIX" in
+            sk-ant-oat*) export CLAUDE_CODE_OAUTH_TOKEN="$TOKEN" ; echo "Routing as OAuth token" ;;
+            sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ; echo "Routing as API key" ;;
+            *) echo "::warning::Unknown token prefix '$PREFIX' — defaulting to ANTHROPIC_API_KEY" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
+          esac
           # Build the prompt and invoke claude CLI in print (non-interactive)
           # mode. Claude reads context files via its own Read tool and writes
           # the deliverable via its Write tool. Output goes to OUTPUT_PATH.

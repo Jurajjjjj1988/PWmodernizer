@@ -45,12 +45,19 @@ jobs:
 
       - name: Run Claude (verify stage, Opus)
         env:
-          # Token starts with sk-ant- → it's an API key, not an OAuth token,
-          # so use ANTHROPIC_API_KEY env name.
-          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Trim whitespace + auto-route by token prefix. sk-ant-api → API key
+          # (ANTHROPIC_API_KEY); sk-ant-oat → OAuth token (CLAUDE_CODE_OAUTH_TOKEN).
+          RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           INPUT_BASENAME: ${{ inputs.input_basename }}
         run: |
           set -euo pipefail
+          TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
+          PREFIX="${TOKEN:0:12}"
+          case "$PREFIX" in
+            sk-ant-oat*) export CLAUDE_CODE_OAUTH_TOKEN="$TOKEN" ;;
+            sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ;;
+            *) echo "::warning::Unknown token prefix '$PREFIX'" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
+          esac
           PROMPT=$(cat <<EOF
           You are running the Verify stage of the PWmodernizer pipeline as
           a SECOND-OPINION verifier on a Sonnet-generated migration.
