@@ -153,12 +153,21 @@ PWmodernizer/
 
 ## Quality gates (what the pipeline enforces)
 
-Stage 2 will NOT open a code PR if any of these fail:
+**Stage 0 pre-flight** (before Claude is even called):
+- Input must be 200B+ (not empty/stub)
+- Input must tokenize to ≤25K tokens (NVIDIA RULER context-degradation threshold)
+- Encoding must be UTF-8 or US-ASCII (`file --mime-encoding`)
+- Must contain test markers (`test|it|describe|@Test|def test_|cy.|page.`)
+- Secret scan against AWS / Stripe live / GitHub PAT / Slack / Anthropic / OpenAI tokens (warn, not block)
+
+**Stage 2 generation gates** — code PR opens only if all pass:
 
 - `tsc --noEmit` passes (strict mode, no `any`)
-- `eslint --fix` produces no remaining errors
-- `npx playwright test --list` enumerates the generated spec (it parses as a real Playwright test)
-- AST-diff-not-trivial check: rejects "migrations" where ≥80% of source bytes appear verbatim in the output (cosmetic-only fix)
+- `eslint --fix` with 22 `eslint-plugin-playwright` rules + 11 research-backed additions (`prefer-native-locators`, `no-element-handle`, `no-networkidle`, `no-unsafe-references`, `max-nested-describe: 2`, etc.)
+- `npx playwright test --list` enumerates the generated spec (parses as a real Playwright test)
+- **AST-diff-not-trivial** check: ts-morph + Zhang-Shasha tree-edit-distance with identifier normalization (`$id`, `$str`). Reject if normalized distance < 5% of max tree size. Falls back to LCS overlap > 80% for `.java`/`.py` inputs where ts-morph can't parse. (See `scripts/ast-diff-trivial-check.ts`.)
+- **Output secret scan**: mirrors Stage 0 pre-flight against generated output — blocks if Claude hallucinated a real prod credential
+- **Lint-and-test feedback loop** (Aider pattern): if any of `tsc`/`eslint`/`playwright parse` fails, retry once with errors fed back to Claude; hard-fail after 1 retry
 - No forbidden patterns: `waitForTimeout`, `force: true`, `.nth()`, `test.only`, `test.skip`, `page.pause()`, `: any`, `as unknown as`, `console.log`
 
 Stage 2 emits aggregate confidence (0..1):
@@ -200,6 +209,21 @@ The commercial AI testing market is full of these. Migrator does not do them:
 - ❌ Self-healing oversold ("works on minor changes" is the disclaimer hidden in their FAQs)
 - ❌ Hidden per-seat / per-run / per-SKU pricing (we are OSS)
 - ❌ Live-mode "AI fixing flaky tests in your CI" — that's a different product
+
+## Research-backed defenses against hallucination
+
+The pipeline implements specific patterns from the LLM-as-code-author literature:
+
+- **Snippet inventory grounding (Aider repo-map / Sourcegraph Cody RAG):** before Stage 2 generation, the workflow enumerates existing POMs/fixtures/helpers and injects their export signatures into the prompt. Forces reuse over reinvention. See `migrate.yml` "Build snippet inventory" step.
+- **Lint-and-test feedback loop (Aider pattern):** if `tsc`/`eslint`/`playwright parse` fails after generation, the errors are fed back to Claude with a 1-retry hard cap. Cuts hallucination rate before any human sees the output.
+- **Plan envelope JSON sidecar (LPW / Routine pattern):** machine-validatable schema (`scripts/plan-envelope.schema.json`) alongside the markdown plan. Opt-in; validates Stage 1 output against contracts before Stage 2 reads it.
+- **Few-shot example validation (Cleanlab pattern):** `scripts/validate-examples.ts` cross-checks every `examples/*/expected-plan.md` against `knowledge-base.md` (KB-IDs) and its own Open-questions section (Q-IDs). Currently 21 dangling Q-IDs surfaced in Selenium plans (synthesized Q-slugs that don't bind).
+- **BAML-style prompt fragments:** `prompts/_fragments/*.md` define shared rules (locator-priority, verdict-ladder, KB-ID format, plan schema) included via `{{include:}}` markers; `scripts/assemble-prompts.ts` expands them. Single source of truth across analyze/generate/verify prompts.
+- **Schema demotion under Tam et al. 2024:** the `Hallucination-defense pins` section was emergent in early runs; we considered making it mandatory, then demoted it back to ENCOURAGED after research showed forced structured-output sections degrade reasoning quality (JSON-mode dropped Claude 3 Haiku 86.5%→23.4% on GSM8K).
+- **Token-based input gate (NVIDIA RULER):** Stage 0 uses character/4 token estimate capped at 25K (well below the ~50% degradation threshold of Claude's 1M context).
+- **3-level verdict ladder (from QA-skills `22-reality-check.md`):** `SHIP IT` / `FIX FIRST` / `START OVER` — round-up rule, no soft middle.
+- **Uncalibrated validators run in warn-only mode (Sakasegawa 2026):** `validate-examples.ts` is `--warn` until `tools/calibrate-pipeline/` fixtures land. Premature gating produces false confidence.
+- **Abandon-and-regenerate flow:** `/regenerate` slash command via `peter-evans/slash-command-dispatch` lets a reviewer close a bad plan PR and force fresh Stage 1 with comment body as feedback. (`regenerate-dispatch.yml`)
 
 ## Contributing
 
