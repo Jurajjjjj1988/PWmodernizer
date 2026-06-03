@@ -109,6 +109,30 @@ jobs:
         if: steps.dedup.outputs.skip == 'false'
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Debug — verify token presence (length only, never value)
+        if: steps.dedup.outputs.skip == 'false'
+        env:
+          T: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${T:-}" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is EMPTY in this workflow"
+            exit 1
+          fi
+          LEN=$(printf '%s' "$T" | wc -c)
+          # Trim whitespace + check that.
+          TRIMMED=$(printf '%s' "$T" | tr -d ' \t\n\r')
+          TLEN=$(printf '%s' "$TRIMMED" | wc -c)
+          echo "Raw token length: $LEN"
+          echo "Trimmed length: $TLEN"
+          if [ "$LEN" -ne "$TLEN" ]; then
+            echo "::warning::Token contains whitespace/newline characters — likely paste issue"
+          fi
+          # Print first 4 chars only so we can verify the prefix format.
+          echo "Token prefix (first 4 chars): ${TRIMMED:0:4}..."
+          claude --version || echo "(claude --version failed)"
+
       - name: Run Claude (analyze stage)
         if: steps.dedup.outputs.skip == 'false'
         env:
