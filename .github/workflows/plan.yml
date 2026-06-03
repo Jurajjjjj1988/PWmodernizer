@@ -20,6 +20,11 @@ on:
         description: 'Path to one input file (repo-relative) to re-plan'
         required: true
         type: string
+  # Fired by regenerate-dispatch.yml when a reviewer comments `/regenerate`
+  # on a closed/open plan PR. Carries input_path + freeform feedback in
+  # client_payload.slash_command.args.* (see regenerate-dispatch.yml header).
+  repository_dispatch:
+    types: [regenerate-plan]
 
 concurrency:
   group: pwm-plan-${{ github.ref }}
@@ -66,6 +71,15 @@ jobs:
             INPUT="${{ inputs.input_path }}"
             if [ ! -e "$INPUT" ]; then
               echo "::error::input_path '$INPUT' not found (must be file or dir)"
+              exit 1
+            fi
+            JSON=$(jq -nc --arg p "$INPUT" '[$p]')
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            # /regenerate flow — input_path comes from client_payload, written
+            # by regenerate-dispatch.yml's static-args. Skip git diff entirely.
+            INPUT='${{ github.event.client_payload.slash_command.args.named.input_path }}'
+            if [ -z "$INPUT" ] || [ ! -e "$INPUT" ]; then
+              echo "::error::repository_dispatch client_payload missing or invalid input_path: '$INPUT'"
               exit 1
             fi
             JSON=$(jq -nc --arg p "$INPUT" '[$p]')
@@ -235,6 +249,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # /regenerate flow forces re-run: reviewer has explicitly asked for
+          # another pass, so the closed PR carrying the matching hash label
+          # MUST NOT block. The new PR will reuse the same hash label and
+          # will be opened alongside the closed one.
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Forced regeneration via /regenerate — bypassing dedup."
+            exit 0
+          fi
           EXISTING=$(gh pr list --state all --label "${{ steps.idempotency.outputs.label }}" --json number --jq 'length')
           if [ "$EXISTING" -gt 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -284,6 +307,9 @@ jobs:
           RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           INPUT_PATH: ${{ matrix.input_path }}
           OUTPUT_PATH: outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md
+          # `args.all` is the raw text after /regenerate (set by the
+          # slash-command-dispatch action). Empty string when not a regenerate run.
+          REGENERATE_FEEDBACK: ${{ github.event.client_payload.slash_command.args.all }}
         run: |
           set -euo pipefail
           TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
@@ -294,6 +320,13 @@ jobs:
             sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ; echo "Routing as API key" ;;
             *) echo "::warning::Unknown token prefix '$PREFIX' — defaulting to ANTHROPIC_API_KEY" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
           esac
+          # Conditionally build the feedback block. Done in shell (not heredoc)
+          # so we don't inject an empty section header when there's no feedback.
+          FEEDBACK_BLOCK=""
+          if [ -n "${REGENERATE_FEEDBACK:-}" ]; then
+            FEEDBACK_BLOCK=$(printf '\n## Reviewer feedback for regeneration\n\nA previous plan PR for this input was closed by a reviewer who left this feedback. Address it directly in the new plan — what they flagged is what they want fixed.\n\n%s\n' "$REGENERATE_FEEDBACK")
+            echo "Regeneration with reviewer feedback (${#REGENERATE_FEEDBACK} chars)."
+          fi
           # Build the prompt and invoke claude CLI in print (non-interactive)
           # mode. Claude reads context files via its own Read tool and writes
           # the deliverable via its Write tool. Output goes to OUTPUT_PATH.
@@ -320,7 +353,7 @@ jobs:
           3. config/knowledge-base.md — anti-pattern catalog + API translations
           4. examples/reference/company-style.spec.ts — style anchor
           5. $INPUT_PATH — the input to migrate (file or directory)
-
+          ${FEEDBACK_BLOCK}
           ## Deliverable
 
           ONE markdown file at $OUTPUT_PATH. NO code generation. Follow the
@@ -402,6 +435,7 @@ jobs:
             **Input:** `${{ matrix.input_path }}`
             **Plan:** `outputs/plans/${{ steps.idempotency.outputs.input_basename }}.md`
             **Severity histogram:** ${{ steps.histogram.outputs.total }} anti-patterns — **${{ steps.histogram.outputs.h }} H** / ${{ steps.histogram.outputs.m }} M / ${{ steps.histogram.outputs.l }} L
+            **To regenerate:** comment `/regenerate <optional feedback>` on this PR
 
             ### Review checklist
 

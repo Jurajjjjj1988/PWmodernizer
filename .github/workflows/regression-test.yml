@@ -84,6 +84,16 @@ jobs:
           COUNT=$(grep -cE 'KB-[0-9]+\.[0-9]+\.[0-9]+' config/knowledge-base.md || true)
           echo "KB has $COUNT unique IDs."
 
+      - name: KB IDs valid + referenced
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Strict validator: covers OLD KB-N.N.N and NEW <fw>/<topic>/<name>
+          # formats during the kb-id-migration transition (see config/kb-id-migration.md).
+          # Catches duplicates, malformed new-format IDs, and dangling references
+          # from prompts/*.md or config/migration-rules.md.
+          npx tsx scripts/kb-validate.ts
+
       - name: Prompt files non-empty
         shell: bash
         run: |
@@ -142,3 +152,21 @@ jobs:
             fi
           done
           echo "Verdict ladder consistent across prompt and workflow."
+
+      - name: Regenerate-dispatch workflow exists + wired to slash-command-dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Existence check for the abandon-and-regenerate flow. Catches
+          # accidental deletion or rename. Pairs with the repository_dispatch
+          # listener in plan.yml (regenerate-plan event type).
+          FILE=".github/workflows/regenerate-dispatch.yml"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::$FILE missing — /regenerate flow is broken."
+            exit 1
+          fi
+          if ! grep -qF 'peter-evans/slash-command-dispatch' "$FILE"; then
+            echo "::error::$FILE does not reference peter-evans/slash-command-dispatch."
+            exit 1
+          fi
+          echo "Regenerate-dispatch workflow present + wired to slash-command-dispatch."

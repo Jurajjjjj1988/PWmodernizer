@@ -1,0 +1,100 @@
+# Abandon-and-regenerate dispatcher.
+#
+# Problem: Stage 1 (plan.yml) dedups on content-hash label `migrator:plan:<hash>`.
+# When a reviewer closes a bad plan PR, the closed PR still carries the hash
+# label — so the next push of the same input is silently skipped. The input
+# gets "stuck" until someone manually deletes the closed PR or its label.
+#
+# Solution: reviewer comments `/regenerate <optional feedback>` on the plan PR.
+# This workflow parses the command, extracts the input path from the PR body,
+# and fires a `repository_dispatch` event of type `regenerate-plan` carrying
+# the input_path + feedback in client_payload. plan.yml listens for that event
+# type, skips the dedup check, and injects the feedback into the analyze prompt.
+#
+# Auth note: peter-evans/slash-command-dispatch normally wants a repo-scoped PAT
+# so the dispatched workflow can chain further GITHUB_TOKEN-authenticated runs
+# (PAT-issued dispatches DO re-trigger workflows; GITHUB_TOKEN-issued ones DO NOT
+# trigger downstream `push` workflows). For our case, we WANT the dispatch to
+# trigger plan.yml's `repository_dispatch` listener — which works fine with
+# `${{ github.token }}` because repository_dispatch is the listener type itself,
+# not a downstream push/PR trigger. So we deliberately use github.token here to
+# avoid the PAT setup burden. Documented limitation: if plan.yml is ever rewired
+# to chain a `push`-triggered workflow off this dispatch, we'd need a real PAT.
+
+name: Regenerate dispatcher
+
+on:
+  issue_comment:
+    types: [created]
+
+# Only meaningful on PRs that are migration plans. The label gate is enforced
+# inside the job (issue_comment events fire on both issues and PRs, and labels
+# are not in the trigger filter surface).
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dispatch:
+    # Three preconditions:
+    #   1. It's a PR comment (issue_comment fires for issue + PR comments).
+    #   2. The comment body starts with /regenerate.
+    #   3. The PR carries the `migrator:plan` label.
+    # Conditions 1 + 2 are cheap (gate at job level); 3 requires an API call,
+    # done in the first step before the action runs.
+    if: |
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/regenerate')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR has migrator:plan label + extract input path
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Label gate — issue_comment trigger can't filter on PR labels.
+          HAS_LABEL=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | any(. == "migrator:plan")')
+          if [ "$HAS_LABEL" != "true" ]; then
+            echo "::notice::PR #$PR_NUMBER lacks migrator:plan label — ignoring /regenerate."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Parse the input path from the PR body. plan.yml writes:
+          #   **Input:** `<path>`
+          # on its own line. Pull the backtick-quoted path.
+          BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+          INPUT_PATH=$(printf '%s\n' "$BODY" | grep -oE '\*\*Input:\*\* `[^`]+`' | head -1 | sed -E 's/^\*\*Input:\*\* `([^`]+)`$/\1/')
+          if [ -z "$INPUT_PATH" ]; then
+            echo "::error::Could not parse **Input:** \`<path>\` line from PR #$PR_NUMBER body — cannot regenerate."
+            exit 1
+          fi
+          echo "input_path=$INPUT_PATH" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Parsed input_path: $INPUT_PATH"
+
+      - name: Slash command dispatch
+        if: steps.context.outputs.skip == 'false'
+        # Pinned to v3.0.2. github.token works here because the downstream
+        # listener in plan.yml is a `repository_dispatch` trigger (not `push`),
+        # which DOES fire on github.token-issued dispatches.
+        uses: peter-evans/slash-command-dispatch@f996d7b7aae9059759ac55e978cff76d91853301 # v3.0.2
+        with:
+          token: ${{ github.token }}
+          commands: regenerate
+          # Resulting event type = "<command><suffix>" = "regenerate-plan".
+          event-type-suffix: -plan
+          # `permission: write` ensures only collaborators with write access can
+          # trigger regeneration — prevents drive-by /regenerate from random
+          # commenters on public repos.
+          permission: write
+          issue-type: pull-request
+          # Pass the parsed input_path as a static arg so it lands in
+          # client_payload alongside the freeform feedback the action parses
+          # from the comment body. The action puts these in:
+          #   client_payload.slash_command.args.named.input_path
+          #   client_payload.slash_command.args.all   (everything after /regenerate)
+          static-args: |
+            input_path=${{ steps.context.outputs.input_path }}
