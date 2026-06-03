@@ -4,5 +4,6 @@
     "rootDir": ".",
     "types": ["node", "@playwright/test"]
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts"],
+  "exclude": []
 }

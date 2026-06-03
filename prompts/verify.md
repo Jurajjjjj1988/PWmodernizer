@@ -19,7 +19,7 @@ Be calibrated. False positives waste the reviewer's time. False negatives let ba
 4. **Any supporting files** Stage 2 produced: `outputs/tests/pages/<name>.page.ts`, `outputs/tests/fixtures/<name>.fixture.ts`, `outputs/reports/<input-basename>.md`. The report claims metrics — verify them.
 5. **`config/migration-rules.md`** and **`config/knowledge-base.md`** — the rules and anti-pattern catalog. If the generator missed a smell catalogued in the KB, that's a finding.
 
-If any of these is missing, emit a verification report with verdict `block` and body explaining what's missing. Do not infer.
+If any of these is missing, emit a verification report with verdict `START OVER` and body explaining what's missing. Do not infer.
 
 ## Your task
 
@@ -146,12 +146,14 @@ Write exactly this structure to `outputs/reports/<input-basename>-verify.md`:
 - TypeScript strict mode claimed: pass/fail — verified: pass/fail
 
 ## Verdict
-- **consensus** — full agreement, no findings above info severity
-- **info** — only stylistic differences (cosmetic / preference)
-- **warn** — at least one `warn`-severity finding; human reviewer should adjudicate before merge
-- **block** — at least one `block`-severity finding; reject migration and require regeneration with the disagreements as feedback to Stage 2
 
-## Feedback for regeneration (only if verdict = block)
+Exactly one of three values. Pick the most severe one that applies — never round down.
+
+- **SHIP IT** — full agreement OR only stylistic/cosmetic differences. Safe to merge as-is. If you have `info`-level observations, list them under "Style notes" but the verdict stays SHIP IT.
+- **FIX FIRST** — at least one `warn`-severity finding. Human reviewer should adjudicate (edit the test or the report) before merge. Generator's output is not wrong, but you would have done it differently in a defensible way.
+- **START OVER** — at least one `block`-severity finding. Reject migration and regenerate with the disagreements as feedback to Stage 2.
+
+## Feedback for regeneration (only if verdict = START OVER)
 Concrete instructions Stage 2 needs to produce a corrected migration. Each item should be actionable, not philosophical:
 - "Replace `getByRole('button', { name: 'Submit' })` at line 42 with `getByText('Submit')` — accessible-role assumption not justified; plan Q3 was unresolved."
 - "Restore the assertion `expect(page.getByText('Order confirmed')).toBeVisible()` — dropped from source line 87, not in plan."
@@ -192,7 +194,7 @@ These will erode trust in the verifier and lead to it being ignored:
 1. **Flagging every locator the generator chose differently than you would have.** If the generator's choice is defensible, severity is `info` at most. Picky on signal, lenient on style.
 2. **Missing a hard wait or `any` type.** Forbidden patterns are blocking. If the generator left one in and you didn't catch it, the verifier failed.
 3. **Hallucinating a forbidden pattern that isn't actually there.** Read the file. Don't claim `waitForTimeout` is on line 47 if it isn't.
-4. **Saying "consensus" when there are real `warn`-level findings.** The verdict ladder is consensus → info → warn → block. Use it honestly.
+4. **Saying "SHIP IT" when there are real `warn`-severity findings.** The 3-level ladder is SHIP IT → FIX FIRST → START OVER. Round UP, never down — if any one finding is warn-severity, the whole verdict is FIX FIRST. One block-severity finding → START OVER.
 5. **Writing essays in the disagreement table.** One-sentence reasoning per row. The table is for scannability.
 6. **Producing more than one output file.** Exactly `outputs/reports/<input-basename>-verify.md`. Not the original report, not the spec, not the plan.
 7. **Failing to read the original input.** The whole point of the verifier is to cross-check against the source intent. If you only read the generated test, you can't detect behavioural drift.
@@ -202,6 +204,6 @@ These will erode trust in the verifier and lead to it being ignored:
 - Direct. Reviewers value short, specific findings over hedged generalities.
 - Cite line numbers from both source and generated files. Disagreements without locations are not actionable.
 - Cite KB-IDs from the knowledge base when applicable.
-- When you're uncertain, say "unclear" rather than guessing. An honest `unclear` produces a better human review than a confident-but-wrong `consensus`.
+- When you're uncertain, say "unclear" rather than guessing. An honest `unclear` produces a better human review than a confident-but-wrong `SHIP IT`.
 
 When you finish, the last action in your transcript should be writing the verification report. No chat summary afterward — the report is the deliverable, and the verdict is the headline.

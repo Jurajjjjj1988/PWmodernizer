@@ -86,11 +86,10 @@ jobs:
           ## Deliverable
 
           ONE markdown file at the verify report path. Schema in
-          prompts/verify.md. Verdict line MUST be one of:
-          - Verdict: consensus
-          - Verdict: info
-          - Verdict: warn
-          - Verdict: block
+          prompts/verify.md. Verdict line MUST be EXACTLY one of (case-sensitive):
+          - Verdict: SHIP IT
+          - Verdict: FIX FIRST
+          - Verdict: START OVER
           EOF
           )
           claude \
@@ -115,9 +114,11 @@ jobs:
           fi
           REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
           gh pr comment "$PR_NUMBER" --body-file "$REPORT"
-          VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | awk '{print $3}')
-          if [ "$VERDICT" = "block" ]; then
-            gh pr edit "$PR_NUMBER" --add-label "verify:block"
-          elif [ "$VERDICT" = "warn" ]; then
-            gh pr edit "$PR_NUMBER" --add-label "verify:warn"
-          fi
+          # Parse 3-level verdict: SHIP IT / FIX FIRST / START OVER
+          VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//')
+          case "$VERDICT" in
+            "START OVER") gh pr edit "$PR_NUMBER" --add-label "verify:start-over" ;;
+            "FIX FIRST")  gh pr edit "$PR_NUMBER" --add-label "verify:fix-first" ;;
+            "SHIP IT")    gh pr edit "$PR_NUMBER" --add-label "verify:ship-it" ;;
+            *) echo "::warning::Unrecognized verdict '$VERDICT' — no label applied" ;;
+          esac

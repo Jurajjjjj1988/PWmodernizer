@@ -572,12 +572,17 @@ One paragraph describing what this test exercises in terms of user-perceivable b
 
 ## Anti-patterns detected
 
-- [ ] hard-wait (line N) — `cy.wait(2000)`, replace with web-first assertion on the next observable element
-- [ ] index-selector (line N) — `cy.get('.item').eq(2)`, replace with `getByRole('listitem', { name: ... })`
-- [ ] xpath (line N) — replace with `getByLabel(...)`
-- [ ] conditional assertion (line N) — `if (el) { ... }`, split into two tests
-- [ ] missing assertion (line N) — test ends with action; add observable-outcome assertion
-- [ ] (one bullet per smell found)
+Mandatory table format. Sort by Severity descending (H, M, L), then by Line ascending. One row per smell. Severity codes: **H** = test will flake / break / leak secrets, **M** = test still works but is fragile or unreadable, **L** = stylistic.
+
+| Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
+|---|---|---|---|---|---|
+| H | 8 | KB-1.1.1 | hard-wait | `cy.wait(2000)` | web-first assertion on next observable element |
+| H | 12 | KB-1.4.12 | hardcoded-url | `cy.visit('https://shop.acme.test')` | configure `baseURL`, use relative path |
+| M | 15 | KB-1.2.3 | index-selector | `cy.get('.item').eq(2)` | `getByRole('listitem', { name: ... })` |
+| M | 18 | KB-1.1.5 | sync-probe | `expect(await el.isVisible()).toBe(true)` | `await expect(el).toBeVisible()` |
+| L | 22 | KB-1.1.12 | conditional-logic | `if (el) { ... } else { throw }` | direct `await expect(...)` |
+
+Each KB-ID MUST exist in `config/knowledge-base.md`. If you detect a smell with no KB entry, emit row with KB-ID `KB-UNCLASSIFIED` and add a one-paragraph note in the "Unclassified smells" subsection below the table.
 
 ## Locator translation table
 
