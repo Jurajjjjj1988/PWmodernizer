@@ -160,6 +160,16 @@ jobs:
           set -euo pipefail
           npx tsc --noEmit -p tsconfig.json
 
+      - name: Validators calibrated against fixtures (Sakasegawa 2026)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # tools/calibrate-pipeline/ runs each validator against 3 good + 3 bad
+          # fixtures per validator. Validator must accept goods and reject bads
+          # with the expected error message (golden-output substring match).
+          # Required before any validator is promoted from --warn to --strict.
+          npm run calibrate
+
       - name: Plan envelope schema validates
         shell: bash
         run: |

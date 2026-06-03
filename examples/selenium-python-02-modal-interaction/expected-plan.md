@@ -54,18 +54,11 @@ Sorted by Severity (H, M, L), then by Line.
 - Split into multiple specs: no — single feature (invite modal).
 
 ## Open questions for reviewer
-- Is the modal actually a `role="dialog"` element with an accessible
-  name? If not, the `getByRole('dialog', { name: 'Invite a new user' })`
-  strategy fails — switch to `getByTestId('invite-modal')`.
-- The original spec picks the 3rd button in the modal as the close
-  button (`button[3]`). Visually we suspect this is the X icon button.
-  Reviewer should confirm via DOM; if not, name it correctly
-  (`getByRole('button', { name: 'Cancel' })` etc.).
-- Same for the 2nd button as "Send invite" — confirm the actual button
-  copy.
-- The invalid-email scenario only enters the email and clicks send. Does
-  the modal have an additional required field (name, role)? If yes, the
-  test may need to fill those to isolate the email-specific error.
+- **Q-dialog**: Is the modal actually a `role="dialog"` element with an accessible name? If not, the `getByRole('dialog', { name: 'Invite a new user' })` strategy fails — switch to `getByTestId('invite-modal')`.
+- **Q-close**: The original spec picks the 3rd button in the modal as the close button (`button[3]`). Visually we suspect this is the X icon button. Reviewer should confirm via DOM; if not, name it correctly (`getByRole('button', { name: 'Cancel' })` etc.).
+- **Q-send-invite**: Same for the 2nd button as "Send invite" — confirm the actual button copy.
+- **Q-modal-email**: Does the email input in the modal have an associated `<label>` element? Plan assumes `getByLabel('Email')`; without a label, switch to `getByPlaceholder('Email')` or `getByTestId`.
+- The invalid-email scenario only enters the email and clicks send. Does the modal have an additional required field (name, role)? If yes, the test may need to fill those to isolate the email-specific error.
 
 ## Risk callouts
 - The class-based `setup_class` shared a single `driver` instance
