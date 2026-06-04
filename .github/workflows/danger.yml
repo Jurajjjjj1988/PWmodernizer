@@ -1,0 +1,52 @@
+# Danger.js — deterministic PR policy layer.
+#
+# Runs the policy rules in dangerfile.ts on every PR open / sync / reopen,
+# plus on PR review events so re-running picks up label changes (CANDOR may
+# add `confidence:*` labels after the PR opens — those changes don't fire
+# `pull_request` synchronize, but they do fire `pull_request_review`).
+#
+# Permissions kept to the minimum Danger needs:
+#   - pull-requests: write  (to post the sticky review comment)
+#   - contents: read        (to fetch the diff)
+#
+# See docs/troubleshooting.md "Authorization header collision" — actions/checkout
+# must use persist-credentials: false here (same pattern as plan.yml / migrate.yml).
+
+name: Danger PR policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+concurrency:
+  group: danger-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  danger:
+    name: Run Danger
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Danger
+        run: npx danger ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
