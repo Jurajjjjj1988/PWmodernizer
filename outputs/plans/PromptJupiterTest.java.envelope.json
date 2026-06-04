@@ -1,0 +1,59 @@
+{
+  "inputBasename": "PromptJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "enters text into a browser prompt dialog and verifies the message @positive",
+      "userAction": "Navigate to the dialog-boxes demo page, click the prompt button, verify the browser prompt dialog shows 'Please enter your name', type 'John Doe' and accept. (From source: testPrompt — two-step alert acquisition.)",
+      "expectedAssertions": [
+        "dialog message equals 'Please enter your name' before acceptance",
+        "dialog accepted with input text 'John Doe'",
+        "post-dialog DOM change is visible (Q3 open — reviewer must confirm the observable outcome)"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "enters text into a browser prompt dialog (wait-and-assign variant) @positive",
+      "userAction": "Same user-facing scenario as 1.1 — distinct only in Selenium API usage (wait.until returns Alert directly). Behavioral duplicate; see Q1 for consolidation recommendation. (From source: testPrompt2.)",
+      "expectedAssertions": [
+        "dialog message equals 'Please enter your name' before acceptance",
+        "dialog accepted with input text 'John Doe'",
+        "post-dialog DOM change is visible (Q3 open — reviewer must confirm the observable outcome)"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.findElement(By.id(\"my-prompt\"))",
+      "target": "page.locator('#my-prompt')",
+      "confidence": "high",
+      "notes": "By.id maps mechanically to CSS #id selector per KB §6 pin rule 1. ID is hand-written (not framework-generated). WHY-comment required in Stage 2 output per migration-rules §5 (CSS locator as last resort) unless reviewer confirms role-based upgrade via Q2."
+    },
+    {
+      "original": "driver.findElement(By.id(\"my-prompt\")) — role-based upgrade",
+      "target": "page.getByRole('button', { name: /prompt/i })",
+      "confidence": "med",
+      "notes": "Button role inferred from test context (click triggers a native dialog). Accessible name /prompt/i inferred from element id value — not DOM-confirmed. Reviewer must inspect the page accessibility tree before Stage 2 adopts this. See hallucination-defense pin 1."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Prompt trigger button",
+      "assumedLocator": "page.getByRole('button', { name: /prompt/i })",
+      "sourceLocator": "driver.findElement(By.id(\"my-prompt\"))",
+      "whyComment": "Q2 unresolved: prompt button accessible name not DOM-confirmed — accessible name /prompt/i inferred from element id value only.",
+      "reviewerFallback": "Inspect https://bonigarcia.dev/selenium-webdriver-java/dialog-boxes.html accessibility tree for the button with id='my-prompt'. If name does not match /prompt/i, keep page.locator('#my-prompt') and add a WHY-comment, or ask the page owner to add data-testid='prompt-button'."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.0,
+    "smellCountDelta": -9,
+    "locDelta": -48,
+    "antiPatternCoverage": "9/9"
+  }
+}
