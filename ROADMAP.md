@@ -21,7 +21,7 @@
 
 ### Validators (all clean, calibrated 3+3 each)
 
-- ✅ `scripts/kb-validate.ts` — 62 KB IDs, 7 references resolved
+- ✅ `scripts/kb-validate.ts` — 68 KB IDs, 29 references resolved
 - ✅ `scripts/validate-examples.ts` — 12 plans, 0 findings (warn mode per Sakasegawa)
 - ✅ `scripts/plan-envelope-validate.ts` — canonical example clean
 - ✅ `scripts/ast-diff-trivial-check.ts` — ts-morph + Zhang-Shasha
@@ -44,12 +44,12 @@
 Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibration fixtures landed. Next: promote validators one at a time after observing N real runs each.
 
 - [x] `validate-examples.ts` --strict (commit `a3e7f15` — calibration green, promoted)
-- [ ] AST-diff threshold tuning after observing 10+ real ts-morph diffs (currently 5% normalized distance; may need stricter)
+- [x] AST-diff threshold sweep across 10 calibration fixtures (commit `0c243eb` — safety margin 36.36%, 5% default robust; `npm run ast-diff:sweep`). Re-run on real ts-morph diffs once we have 10+ from production.
 - [x] `plan-envelope-validate` wired into plan.yml + migrate.yml (commits `a3a6cc5` + `1d775c3` + `31a2bfa` — hard enforcement with derive-envelope safety net)
 
 ### Fragment adoption completion
 
-- [ ] Migrate `verify.md` L147-151 metric verification template to fragments (deferred — placeholder structure, not shared concept)
+- [x] Migrate `verify.md` L147-151 metric verification template to fragments (commit `4f32724` — `_fragments/metric-verification-output.md` shared between verify.md + verify-code-review.md post-CANDOR)
 - [x] Migrate `verify.md` verdict-ladder inline copy to `verdict-ladder.md` (commit `90a2665`)
 - [x] Add `assemble-prompts --write` as a workflow step before `Run Claude` (commit `60c6b51` — CRITICAL silent bug fix: Claude was reading raw `{{include:...}}` markers before)
 
@@ -79,13 +79,15 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 - [x] Remove pre-existing TS errors in evaluate.ts (`noUncheckedIndexedAccess`) (commit `4e2f16e`)
 - [x] Bump `actions/checkout` v4→v6 + `actions/setup-node` v4→v6 (Node 24, commit `b2cf959`)
 - [x] All 3rd-party actions SHA-pinned + comment with version
-- [ ] Remove SonarLint cosmetic warnings in derive-envelope.ts (cognitive complexity, sort vs toSorted — partial fix in `26260bd`)
+- [x] Remove SonarLint cosmetic warnings in derive-envelope.ts (commit `3cc6c05` — `.sort()` → `.toSorted()`, `parseScenarios` split into 3 helpers; tsconfig ES2022 → ES2023)
 
 ---
 
 ## v1.0 — production-ready (target 2026-09-30)
 
 ### DOM grounding (Risk 1 closure)
+
+> **Design brief**: [`docs/playwright-mcp-integration.md`](docs/playwright-mcp-integration.md) (commit `f4edcfb`) — API contract, integration shape, and 7-phase implementation order.
 
 - [ ] `playwright-mcp` integration: Stage 2 receives a real DOM snapshot from the SUT at `MIGRATION_TARGET_URL` and grounds locator decisions
 - [ ] HIGH-confidence locators (currently mechanical mapping only) get an additional check against the DOM before emission
@@ -99,20 +101,20 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 ### Multi-agent verify (CANDOR pattern)
 
-- [ ] Replace single-Opus verify with 2-agent consensus: SDET subagent + Code Review subagent (per `ai-debug-accelerator/debugger.py`)
-- [ ] Verify ladder becomes: 2/2 agree → SHIP IT; 1/2 → FIX FIRST; 0/2 → START OVER
+- [x] Replace single-Opus verify with 2-agent consensus: SDET subagent + Code Review subagent (commit `3993b01` — verify.yml `verify-subagent` matrix `[sdet, code-review]` + `tally` job; prompts/verify-sdet.md 175 LOC + prompts/verify-code-review.md 171 LOC)
+- [x] Verify ladder: 2/2 SHIP IT → SHIP IT; 1/2 → FIX FIRST; 0/2 → START OVER (commit `3993b01` — conservative fallback: missing/unparseable sub-report counts as START OVER for that lens)
 
 ### Metrics dashboard
 
 - [ ] SQLite persistence of every run (Stage 1 confidence, Stage 2 confidence, verify verdict, time-to-merge)
 - [ ] `npm run dashboard` opens a read-only FastAPI/React view of trends
-- [ ] Per-source-framework quality bins (which framework Migrator handles best/worst)
+- [x] Per-source-framework quality bins (commit `200dabc` — SQLite `source_framework` column + dashboard stacked verdict chart + multi-line confidence trend + sorted "Migrator quality by framework" table; framework detection by path/ext/content)
 
 ### Phase 3 — Cypress (deprioritized but documented)
 
 - [ ] `examples/cypress-*/` corpus expansion to 5+ examples
 - [ ] `inputs/cypress/` first real input
-- [ ] `cy/...` KB-ID namespace expansion (currently ~10 entries, target 50+ for parity with bad-PW)
+- [ ] `cy/...` KB-ID namespace expansion (14 → 20 done in commit `e30bcc8` adding 6 high-impact entries; ~30 more entries deferred until first real Cypress input lands)
 
 ---
 

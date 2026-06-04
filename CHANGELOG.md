@@ -6,7 +6,17 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
-### Added (2026-06-04 multi-agent supercycle — 99 total commits)
+### Added (2026-06-04 multi-agent supercycle — 108 total commits)
+
+**Wave 1+2 evening sweep (3 parallel agents + 6 sequential commits):**
+- Multi-agent verify CANDOR (`3993b01`): `verify.yml` split into `verify-subagent` matrix `[sdet, code-review]` + `tally` job. New prompts `verify-sdet.md` (175 LOC) + `verify-code-review.md` (171 LOC). Verdict ladder 2/2 SHIP IT → SHIP IT, 1/2 → FIX FIRST, 0/2 → START OVER. Auto-regen + secret-scan + label state machine preserved. Closes v1.0 "Multi-agent verify (CANDOR)" ROADMAP item.
+- Plan envelope enforcement E2E (`1c46c14`): Stage 1 dual-output mandate (markdown + JSON), Stage 2 pre-read envelope validation, `// plan:scenario=<id>` pins mandated and verified via new `plan-envelope-validate.ts --code` mode. `derive-envelope` safety net preserved. Closes v1.0 "Plan envelope enforcement" 3 ROADMAP items.
+- Per-framework quality bins (`200dabc`): MetricsDB schema +`source_framework` column (idempotent migration with `unknown` backfill), framework detection by path/ext/content heuristic, dashboard adds stacked verdict-by-fw chart + multi-line confidence trend + sorted "Migrator quality by framework" table. Closes v1.0 "Per-source-framework quality bins" ROADMAP item.
+- SonarLint cleanup (`3cc6c05`): `derive-envelope.ts` `.sort()` → `.toSorted()`, 58-line `parseScenarios` split into 3 helpers each <20 LOC. `tsconfig` target/lib `ES2022` → `ES2023` (Node 22 runtime already supports). Closes v0.5 cleanup item.
+- Fragment adoption completion (`4f32724`): `_fragments/metric-verification-output.md` extracted; both `verify.md` and `verify-code-review.md` reference it. Closes the last v0.5 fragment-adoption gap (deferral note "not shared concept" no longer applies post-CANDOR).
+- AST-diff threshold sweep (`0c243eb` + `4e899fe`): `scripts/ast-diff-threshold-sweep.ts` walks all 10 calibration fixtures, sweeps thresholds [1%..20%], reports per-fixture matrix + safe band. Today's result: bad_max=0.00%, good_min=36.36%, safety margin 36.36% — 5% default robust. `npm run ast-diff:sweep`. Closes v0.5 "AST-diff threshold tuning" ROADMAP item.
+- Cypress KB expansion 14 → 20 (`e30bcc8`): 6 new high-quality anti-patterns added (cy.session no cache-bust, store internals leak, spy/stub cleanup, cy.then stale snapshot, Cypress.Commands.overwrite, should not.exist race). kb-validate 62 → 68 IDs. Remaining ~30 entries stay deferred under Phase 3 pending real Cypress input.
+- playwright-mcp integration brief (`f4edcfb`): `docs/playwright-mcp-integration.md` — design contract for v1.0 Risk-1 (DOM grounding) closure. 7-phase implementation order, API contract for `scripts/dom-ground.ts`, token-budget mitigations, 4 open questions. No code shipped — spec only.
 
 **Batch 3 (2 agents): stress tests + auto-regen**
 - Stress test fixtures (`716815a` + `2ad6882`): 8 adversarial inputs under `inputs/_stress/` + `scripts/test-stage0.ts` simulator. Verdict matrix: 4 REJECT + 2 WARN + 2 PASS. Risk 4 thoroughly validated.
