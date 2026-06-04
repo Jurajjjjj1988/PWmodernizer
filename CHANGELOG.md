@@ -6,7 +6,24 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
-### Added (2026-06-04 multi-agent supercycle — 124 total commits)
+### Added (2026-06-04 multi-agent supercycle — 145 total commits)
+
+**Wave 9 100%-push (8 commits: 3 parallel agents → 3 pain-solvers → DOM Phase 7c scaffolding):**
+
+*Three parallel agents (corpus + KB + walkthrough):*
+- Stress fixtures 8 → 15 (commit `149dccf`): mixed-encoding, single-long-line, binary-as-text, mixed-languages, test-markers-in-comments-only, near-token-limit, unicode-emoji-test. `scripts/test-stage0.ts` gets `EXPECTED_VERDICTS` regression table. Verdict matrix: 7 PASS + 4 REJECT + 4 WARN.
+- Bad-Playwright KB 15 → 25 (commit `4d42708`): network-idle universal wait, raw xpath= engine, .all() snapshot iteration, innerText string compare, sync state probes, manual context clear, serial-mode workaround, console listener leak, screenshot leak, short hard-wait. kb-validate: 115 → 125 IDs; pw/cy/sel parity at 25/50/50.
+- End-to-end walkthrough doc (commit `7d52339`): `docs/walkthrough.md` (197 LOC) using PR #3 as canonical real example — Stage 1 trigger, plan PR review, Stage 2 trigger, verify CANDOR, merge.
+
+*Three pain-solver implementations from web research:*
+- Stage 1 replay cache (commit `6b4da31`, pain #1): `scripts/stage1-replay.ts` (429 LOC) — SHA-256(input+prompt+feedback) cache, `outputs/.stage1-cache/<hash>/`, `--write-cache`/`--force-fresh` flags. Eliminates Claude-quota burn during local prompt iteration. `npm run stage1:replay`.
+- Public SUTs catalog (commit `a2ca52b`, pain #2): `docs/dom-ground-public-suts.md` (295 LOC) — 6 sites (saucedemo, automationexercise, conduit.bondaracademy, practicetestautomation, demoqa, parabank), each with stable role/label locators + suggested calibration fixtures + etiquette guidance.
+- Danger.js policy + workflow (commit `9f5cdce` on `feat/danger-policy` → PR #4, pain #3): `dangerfile.ts` (90 LOC) + `.github/workflows/danger.yml` (52 LOC). 6 rules: title format, no Claude attribution, body schema, confidence label sanity, 1500-LOC file budget, no transient outputs/_*.tmp files. Smoke-tested against PR #2 (rule 6 tripped legitimately) + PR #3 (clean). Danger v13.0.7.
+
+*DOM Phase 7c scaffolding (this commit):*
+- 6 live calibration fixtures (3 good + 3 bad) in `tools/calibrate-pipeline/fixtures/dom-ground-live/` targeting the catalog sites
+- `scripts/dom-ground-live-calibrate.ts` runner + `npm run check:dom-ground:live` (NOT in smoke — needs network, slow, third-party-dependent)
+- ROADMAP Phase 7c marked as scaffolded; final `DOM_GROUND_STRICT` flip waits for first green run
 
 **Wave 5 Selenium-pipeline closure (4 sequential commits):**
 - ROADMAP cleanup (commit `996f6bb`): marked 3 stale items DONE — SQLite persistence, dashboard UI, cypress examples 5+ — all delivered earlier in batches but unchecked in ROADMAP.
