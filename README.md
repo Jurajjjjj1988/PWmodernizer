@@ -87,6 +87,26 @@ inputs/bad-playwright/foo.spec.ts
   - **`CLAUDE_CODE_OAUTH_TOKEN`** — **required**. Generate locally via `claude setup-token` in a real terminal (requires Claude Pro/Max). The token leverages your existing subscription; no separate Anthropic API billing. Alternative: use `ANTHROPIC_API_KEY` from https://console.anthropic.com/ — to switch, replace `claude_code_oauth_token:` with `anthropic_api_key:` in the `with:` blocks of `.github/workflows/{plan,migrate,verify}.yml`.
   - `MIGRATION_TARGET_URL` — _optional_. If set, generation can ground locators against the live DOM via `playwright-mcp` (planned for v1; for v0 it's not yet wired).
 
+### Local commands (npm scripts)
+
+| Command | What it does | When to run |
+|---|---|---|
+| `npm run quickstart` | 9-check onboarding (Node, deps, types, KB, examples, fragments, envelope, calibration) with hints | First time setup; debugging "why does CI fail?" |
+| `npm run smoke` | Same as CI: typecheck + 5 validators + calibration. Silent on success | Pre-push, every commit |
+| `npm run validate:all` | 5 validators + 24 calibration fixtures | When touching scripts/ or examples/ |
+| `npm run check:kb` | KB ID uniqueness + references resolve | When editing knowledge-base.md or expected-plan.md |
+| `npm run check:examples` | Examples KB/Q-ID cross-references (strict) | When editing examples/*/expected-plan.md |
+| `npm run check:assemble` | Prompt fragment `{{include:}}` markers resolve | When editing prompts/_fragments/ or prompts/*.md |
+| `npm run check:envelope` | Canonical envelope schema sanity | When editing scripts/plan-envelope.schema.json |
+| `npm run calibrate` | Run each validator against 3 good + 3 bad fixtures | After validator code changes |
+| `npm run derive-envelope -- --plan <md> --out <json>` | Backfill envelope from markdown plan | When manually fixing a plan that's missing envelope |
+| `npm run assemble-prompts` | Expand `{{include:}}` markers into `prompts/_assembled/` | After editing prompts/_fragments/ |
+| `npm run typecheck` | TS strict on outputs/tests/ | After editing playwright.config.ts or migrations |
+| `npm run typecheck:all` | TS strict across scripts/ + tools/ + outputs/tests/ | Pre-push |
+| `npm run lint` / `npm run lint:fix` | ESLint on outputs/tests/ (22 + 11 rules) | When generated test fails CI lint |
+| `npm run evaluate` | Run evaluate.ts on a specific migration locally | Debugging confidence score |
+| `npm run check:trivial` | AST-diff non-trivial check (ts-morph + Zhang-Shasha) | Debugging "trivial migration" rejection |
+
 ### Trigger your first migration
 
 1. Drop a bad Playwright spec into `inputs/bad-playwright/your-test.spec.ts`.
