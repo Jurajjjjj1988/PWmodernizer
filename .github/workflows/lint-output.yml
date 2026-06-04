@@ -80,7 +80,10 @@ jobs:
             'as unknown as' \
             'console\.log' \
           ; do
-            if grep -rE "$pattern" outputs/tests/ --include='*.ts' --include='*.tsx'; then
+            # Exclude playwright.config.ts — it's runtime config, not test
+            # code, and may legitimately reference types/identifiers that
+            # look like forbidden patterns (e.g. actionTimeout: 5000).
+            if grep -rE "$pattern" outputs/tests/ --include='*.ts' --include='*.tsx' --exclude='playwright.config.ts'; then
               echo "::error::Forbidden pattern '$pattern' found in generated tests"
               FAIL=1
             fi
