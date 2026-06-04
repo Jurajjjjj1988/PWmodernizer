@@ -110,15 +110,15 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 ### Metrics dashboard
 
-- [ ] SQLite persistence of every run (Stage 1 confidence, Stage 2 confidence, verify verdict, time-to-merge)
-- [ ] `npm run dashboard` opens a read-only FastAPI/React view of trends
+- [x] SQLite persistence of every run (commits `bef0e84` + `325101a` — MetricsDB 3 tables wired into all 3 stages; tracks Stage 1 confidence, Stage 2 confidence, verify verdict, KB-ID frequency)
+- [x] `npm run dashboard` opens a read-only web UI (commit `f8994b3` — vanilla http + Chart.js/Tailwind CDN, 5 charts + KB-ID table)
 - [x] Per-source-framework quality bins (commit `200dabc` — SQLite `source_framework` column + dashboard stacked verdict chart + multi-line confidence trend + sorted "Migrator quality by framework" table; framework detection by path/ext/content)
 
 ### Phase 3 — Cypress (deprioritized but documented)
 
-- [ ] `examples/cypress-*/` corpus expansion to 5+ examples
-- [ ] `inputs/cypress/` first real input
-- [x] `cy/...` KB-ID namespace expansion: 50 Cypress entries total (commit `e30bcc8` 14→20, this commit 20→50). kb-validate: 98 IDs total. Parity with bad-PW reached.
+- [x] `examples/cypress-*/` corpus expansion: 5 examples (commit `3b6faf6` added cypress-03/04/05 — intercept-stubbing, session-auth, conditional-and-jquery). Further expansion parked.
+- [ ] `inputs/cypress/` first real input — gated on user submission
+- [x] `cy/...` KB-ID namespace expansion: 50 Cypress entries total (commits `e30bcc8` 14→20 + `0f2643a` 20→50). kb-validate: 98 IDs total. Parity with bad-PW reached.
 
 ---
 
