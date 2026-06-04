@@ -43,15 +43,15 @@
 
 Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibration fixtures landed. Next: promote validators one at a time after observing N real runs each.
 
-- [ ] `validate-examples.ts` --strict after 5+ Selenium plans land (fabrication patterns may differ from bad-PW)
+- [x] `validate-examples.ts` --strict (commit `a3e7f15` — calibration green, promoted)
 - [ ] AST-diff threshold tuning after observing 10+ real ts-morph diffs (currently 5% normalized distance; may need stricter)
-- [ ] `plan-envelope-validate` wired into plan.yml (currently opt-in, gates only the canonical example)
+- [x] `plan-envelope-validate` wired into plan.yml + migrate.yml (commits `a3a6cc5` + `1d775c3` + `31a2bfa` — hard enforcement with derive-envelope safety net)
 
 ### Fragment adoption completion
 
-- [ ] Migrate `verify.md` L147-151 metric verification template to fragments
-- [ ] Migrate `verify.md` L157-159 verdict-ladder inline copy to `verdict-ladder.md`
-- [ ] Add `assemble-prompts --write` as a workflow step before `Run Claude (analyze/generate stage)` (currently fragments-as-include works because Claude resolves bare paths, but explicit assembly is more robust)
+- [ ] Migrate `verify.md` L147-151 metric verification template to fragments (deferred — placeholder structure, not shared concept)
+- [x] Migrate `verify.md` verdict-ladder inline copy to `verdict-ladder.md` (commit `90a2665`)
+- [x] Add `assemble-prompts --write` as a workflow step before `Run Claude` (commit `60c6b51` — CRITICAL silent bug fix: Claude was reading raw `{{include:...}}` markers before)
 
 ### First real Selenium E2E
 
@@ -69,15 +69,16 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 ### Verify stage hardening
 
 - [x] `actions: write` permission for createWorkflowDispatch (commit 7c6bf16)
-- [ ] verify.yml output secret scan mirror (currently only on input + output, not on verify report itself)
+- [x] verify.yml output secret scan mirror (commit `482ac1e` — catches Opus-quoted credentials)
+- [x] verify.yml: explicit guard when Opus fails to produce report (commit `9bcc590`)
 - [x] verify.yml: handle the case where confidence < 0.7 but verify itself ships a SHIP IT verdict (commit `0c9f234` — Opus override removes confidence:low, adds confidence:high)
 
 ### Cleanup + polish
 
-- [ ] Remove pre-existing TS errors in evaluate.ts (`noUncheckedIndexedAccess` — fixed for one but other files may have similar)
-- [ ] Remove unused imports surfaced by SonarLint
-- [ ] Bump `actions/checkout` + `actions/setup-node` to Node 24 (current deprecation warning)
-- [ ] Pin all 3rd-party actions to SHA + comment the version (most are already pinned, but verify all)
+- [x] Remove pre-existing TS errors in evaluate.ts (`noUncheckedIndexedAccess`) (commit `4e2f16e`)
+- [x] Bump `actions/checkout` v4→v6 + `actions/setup-node` v4→v6 (Node 24, commit `b2cf959`)
+- [x] All 3rd-party actions SHA-pinned + comment with version
+- [ ] Remove SonarLint cosmetic warnings in derive-envelope.ts (cognitive complexity, sort vs toSorted — partial fix in `26260bd`)
 
 ---
 
