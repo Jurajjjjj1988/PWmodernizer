@@ -6,7 +6,21 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
-### Added
+### Added (2026-06-04 session — 17 commits, post-PROVEN-E2E hardening)
+- **Plan envelope hard enforcement** (`a3a6cc5` + `31a2bfa` + `1d775c3` + `c3215a4`): Stage 1 instructs Claude to emit envelope.json alongside markdown plan; Stage 2 reads envelope as authoritative contract for scenario IDs / required POMs / fixtures; `scripts/derive-envelope.ts` (365 LOC strict TS) is the safety net — derives envelope from markdown if Claude misses, ensuring envelope ALWAYS exists; regression-test gates derive→validate roundtrip across all 12 example plans
+- **Validator promotion**: `validate-examples` --warn → --strict (`a3e7f15`)
+- **Verify HARD gate** (`13d2544`): START OVER verdict exits 1 (failed check), pairs with branch protection for actual merge block
+- **Confidence formula v2** (`4e2f16e`): 5-signal output-aware (0.4 plan + 0.25 selector + 0.1 webfirst + 0.15 smell-removal + 0.1 forbidden-absence); per-signal breakdown table in report; PR #2 confidence 0.65 → 0.75 under new formula
+- **Prompt fragment expansion in CI** (`60c6b51`): all 3 workflows now run `npm run assemble-prompts` and read `prompts/_assembled/*.md` — fixes silent gap where Claude saw raw `{{include:...}}` markers
+- **outputs/tests/playwright.config.ts** (`992a1e2`): enables local SUT runs via `npx playwright test --config outputs/tests/playwright.config.ts`
+- **CHANGELOG.md** (Keep-a-Changelog format)
+- **ROADMAP.md** (v0.4 / v0.5 / v1.0 / beyond + research backlog)
+- `workflow_dispatch` trigger on `migrate.yml` for manual fresh runs (`79c2422`)
+- `actions: write` permission on trigger-verify job (`7c6bf16`)
+- `npm run validate:all` (5 validators) + `npm run smoke` (typecheck:all + validate:all) + `npm run derive-envelope`
+- Branch protection setup documentation in README
+
+### Added (initial — pre-2026-06-04)
 - **Stage 2 PROVEN end-to-end** (PR #2 — bad-PW flaky-waits → clean Playwright TS, 56 LOC, confidence 0.65→0.72 after evaluate.ts comment-strip fix)
 - 11 research-backed defenses against LLM hallucination (see `README.md` § "Research-backed defenses"):
   - Snippet inventory grounding (Aider / Sourcegraph Cody RAG)
