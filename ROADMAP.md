@@ -55,8 +55,9 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 ### First real Selenium E2E
 
-- [ ] `inputs/selenium-java/` (`EmployeesTest.java` + pages + helpers) — first multi-file Stage 1 → Stage 2 pipeline run (Claude session quota currently blocking; resumes 22:50 UTC)
-- [ ] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline
+- [x] `inputs/selenium-java/` corpus prepared (`EmployeesTest.java` 40 LOC + `pages/EmployeesPage.java` 66 LOC + `helpers/DriverFactory.java` 34 LOC = 140 LOC across 3 files). Ready for Stage 1 → Stage 2.
+- [ ] Trigger first multi-file Stage 1 → Stage 2 pipeline run (Claude session quota currently blocking; resumes 22:50 UTC)
+- [ ] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline (post-run)
 - [x] Tune ts-morph fallback — tree-sitter-java + tree-sitter-python landed in Batch 1 (commit `666332a`); calibration 6/6 → 10/10. `.java` and `.py` get native Zhang-Shasha now.
 
 ### Semantic regression workflow
@@ -121,10 +122,12 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 ## Beyond v1.0
 
-- LangChain/LangGraph integration for state-machine orchestration of Stage 1+2+verify
-- Claude Code SDK rewrite of Stage 2 (currently uses raw CLI; SDK gives better tool routing)
-- Auto-PR-merge after verify SHIP IT (currently requires manual click)
-- GitHub App distribution (currently a workflow only)
+> Scope and feasibility notes per direction: [`docs/beyond-v1-research.md`](docs/beyond-v1-research.md). Each includes motivation, implementation shape, what blocks each from being v1.0, and prerequisites before starting.
+
+- LangChain/LangGraph integration for state-machine orchestration of Stage 1+2+verify — needs ≥ 20 real migrations first to inform graph design
+- Claude Code SDK rewrite of Stage 2 (currently uses raw CLI; SDK gives better tool routing) — recommended first post-v1.0 move
+- Auto-PR-merge after verify SHIP IT (currently requires manual click) — needs ≥ 10 manually-merged SHIP IT runs with no revert before enabling
+- GitHub App distribution (currently a workflow only) — needs v1.0 stability + cost model + compliance scope before MVP
 
 ---
 
