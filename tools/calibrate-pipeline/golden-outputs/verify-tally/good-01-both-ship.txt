@@ -1,0 +1,2 @@
+# 2/2 SHIP IT → SHIP IT
+verify-tally: SDET=SHIP IT CR=SHIP IT → SHIP IT

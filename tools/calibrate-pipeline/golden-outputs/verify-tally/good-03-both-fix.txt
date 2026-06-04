@@ -1,0 +1,2 @@
+# 0/2 SHIP IT → START OVER (both FIX FIRST counts as zero SHIP IT)
+verify-tally: SDET=FIX FIRST CR=FIX FIRST → START OVER

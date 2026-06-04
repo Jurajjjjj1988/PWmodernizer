@@ -1,0 +1,3 @@
+# Malformed CR with no Verdict: line → parsed as START OVER → expected SHIP IT mismatches → exit 1
+verify-tally: SDET=SHIP IT CR=START OVER → FIX FIRST
+expected 'SHIP IT' but got 'FIX FIRST'

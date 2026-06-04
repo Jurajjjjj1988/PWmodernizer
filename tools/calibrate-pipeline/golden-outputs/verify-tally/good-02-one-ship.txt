@@ -1,0 +1,2 @@
+# 1/2 SHIP IT → FIX FIRST
+verify-tally: SDET=SHIP IT CR=FIX FIRST → FIX FIRST

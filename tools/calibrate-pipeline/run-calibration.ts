@@ -35,12 +35,12 @@ const FIXTURE_SPLIT = "<!--FIXTURE-SPLIT-->";
 type ValidatorName =
   | "kb-validate" | "plan-envelope-validate"
   | "ast-diff-trivial-check" | "validate-examples"
-  | "plan-code-coverage" | "dom-ground";
+  | "plan-code-coverage" | "dom-ground" | "verify-tally";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
   "ast-diff-trivial-check", "validate-examples",
-  "plan-code-coverage", "dom-ground",
+  "plan-code-coverage", "dom-ground", "verify-tally",
 ];
 
 interface FixtureResult {
@@ -234,6 +234,23 @@ function runDomGround(fixtureName: string): FixtureResult {
   return buildResult(fixtureName, r, parseGolden(goldenPath("dom-ground", fixtureName)));
 }
 
+function runVerifyTally(fixtureName: string): FixtureResult {
+  // Each fixture has sdet.md (optional in bad-*), cr.md (optional in bad-*),
+  // and expected.txt. The script computes the final tally verdict from the
+  // 2 inputs and compares to expected — exits 0 on match, 1 on mismatch.
+  const fixtureDir = join(FIXTURES_ROOT, "verify-tally", fixtureName);
+  const sdet = join(fixtureDir, "sdet.md");
+  const cr = join(fixtureDir, "cr.md");
+  const expected = readFileSync(join(fixtureDir, "expected.txt"), "utf8").trim();
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "verify-tally.ts"),
+    "--sdet", sdet,
+    "--code-review", cr,
+    "--expected", expected,
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("verify-tally", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
@@ -241,6 +258,7 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "validate-examples": runValidateExamples,
   "plan-code-coverage": runPlanCodeCoverage,
   "dom-ground": runDomGround,
+  "verify-tally": runVerifyTally,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {
