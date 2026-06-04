@@ -96,7 +96,7 @@ inputs/bad-playwright/foo.spec.ts
 |---|---|---|
 | `npm run quickstart` | 9-check onboarding (Node, deps, types, KB, examples, fragments, envelope, calibration) with hints | First time setup; debugging "why does CI fail?" |
 | `npm run smoke` | Same as CI: typecheck + 6 validators + calibration + eslint. Silent on success | Pre-push, every commit |
-| `npm run validate:all` | 6 validators + 40 calibration fixtures | When touching scripts/ or examples/ |
+| `npm run validate:all` | 7 validators + 52 calibration fixtures | When touching scripts/ or examples/ |
 | `npm run check:kb` | KB ID uniqueness + references resolve | When editing knowledge-base.md or expected-plan.md |
 | `npm run check:examples` | Examples KB/Q-ID cross-references (strict) | When editing examples/*/expected-plan.md |
 | `npm run check:assemble` | Prompt fragment `{{include:}}` markers resolve + `prompts/_assembled/` is in sync with source | When editing prompts/_fragments/ or prompts/*.md (stale detection catches forgotten `npm run assemble-prompts`) |
@@ -121,6 +121,8 @@ inputs/bad-playwright/foo.spec.ts
 | `npm run check:trivial` | AST-diff non-trivial check (ts-morph + Zhang-Shasha) | Debugging "trivial migration" rejection |
 
 ### Trigger your first migration
+
+> Full end-to-end walkthrough using a real merged PR as the example: [`docs/walkthrough.md`](docs/walkthrough.md).
 
 1. Drop a bad Playwright spec into `inputs/bad-playwright/your-test.spec.ts`.
 2. Commit and push.
@@ -162,7 +164,7 @@ PWmodernizer/
 │   └── regenerate-dispatch.yml   # /regenerate slash-command handler
 ├── config/
 │   ├── migration-rules.md   # Target style + structure contract (~4,300 words, 85 rules)
-│   └── knowledge-base.md    # Anti-pattern catalog + API translation tables (98 KB IDs across 4 frameworks; pw + cy 50 entries each, sel 25)
+│   └── knowledge-base.md    # Anti-pattern catalog + API translation tables (125 KB IDs across 3 frameworks: pw 25, cy 50, sel 50)
 ├── prompts/
 │   ├── analyze.md           # Stage 1 system prompt
 │   ├── generate.md          # Stage 2 system prompt
@@ -196,7 +198,8 @@ PWmodernizer/
 │   ├── selenium-java-02-checkout/
 │   ├── selenium-java-03-multifile-login/
 │   ├── selenium-python-01-login/
-│   └── selenium-python-02-modal-interaction/
+│   ├── selenium-python-02-modal-interaction/
+│   └── selenium-python-03-multifile-login/  # parity with java-03
 ├── scripts/
 │   ├── evaluate.ts                  # Emits per-migration metrics report + confidence v2 (5-signal)
 │   ├── ast-diff-trivial-check.ts    # Zhang-Shasha tree-edit-distance, identifier normalization
@@ -308,6 +311,8 @@ The pipeline implements specific patterns from the LLM-as-code-author literature
 - **Plan envelope hard enforcement** (commit `1c46c14`) — Stage 1 mandates BOTH markdown plan AND JSON envelope; Stage 2 validates the envelope BEFORE reading the plan body (fail-fast contract); generated `.spec.ts` must carry `// plan:scenario=<id>` pins on every test block, verified by `plan-envelope-validate.ts --code`. `derive-envelope` safety net catches Stage 1 emission misses.
 - **Per-framework quality bins** (commit `200dabc`) — SQLite schema carries a `source_framework` dimension; dashboard adds stacked verdict-by-framework chart, multi-line confidence trend per framework, and a sorted "Migrator quality by framework" table so the next prompt-tuning iteration knows which framework is the weakest link.
 - **DOM grounding Phase 1-7b** (commits `f2e383c`, `e41a73c`, latest) — `scripts/dom-ground.ts` probes every `getByRole/Label/TestId/Text/Placeholder/AltText/Title/locator` call in generated specs against the SUT at `MIGRATION_TARGET_URL`. Mock probe via `mock://always-resolve|always-fail|ambiguous-N` URLs for fixture-free testing; live probe via direct `chromium.launch`. Wired into migrate.yml as opt-in step; `DOM_GROUND_STRICT=true` repo var promotes soft → hard gate. 6/6 calibration fixtures.
+- **CANDOR verify-tally TS replica + calibration** (commit `ce68273`) — `scripts/verify-tally.ts` replicates the bash tally logic from `verify.yml` for unit-testing the verdict ladder outside CI. 6 calibration fixtures (4 good + 2 bad — missing/malformed sub-report → conservative START OVER). Closes the calibration gap that single-script CANDOR shipped with.
+- **Stage 0 adversarial fixture corpus** (commit `149dccf`) — `inputs/_stress/` holds 15 hand-crafted bad inputs (empty, huge, BOM, Latin-1, mid-stream encoding, binary-as-text, real AWS key, near-token-limit) + `scripts/test-stage0.ts` is the local simulator with `EXPECTED_VERDICTS` table that fails on regression. Verdict matrix: 7 PASS + 4 REJECT + 4 WARN. Proves the Stage 0 gate matches its documented contract.
 
 ## Contributing
 
