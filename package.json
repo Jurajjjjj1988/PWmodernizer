@@ -22,7 +22,7 @@
     "typecheck:all": "npm run typecheck:scripts && npm run typecheck",
     "test:parse": "playwright test --list outputs/tests/**/*.spec.ts",
     "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run check:derive && npm run calibrate",
-    "smoke": "npm run typecheck:all && npm run validate:all",
+    "smoke": "npm run typecheck:all && npm run validate:all && npm run lint",
     "quickstart": "tsx scripts/quickstart-check.ts"
   },
   "devDependencies": {
