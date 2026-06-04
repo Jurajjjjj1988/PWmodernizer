@@ -11,6 +11,7 @@
     "check:examples": "tsx scripts/validate-examples.ts --strict",
     "check:assemble": "tsx scripts/assemble-prompts.ts --check",
     "check:envelope": "tsx scripts/plan-envelope-validate.ts --envelope examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json",
+    "check:derive": "bash -c 'set -e; for plan in examples/*/expected-plan.md; do [[ \"$plan\" == *reference* ]] && continue; out=$(mktemp); tsx scripts/derive-envelope.ts --plan \"$plan\" --out \"$out\" >/dev/null && tsx scripts/plan-envelope-validate.ts --envelope \"$out\" >/dev/null || { echo \"FAIL: $plan\"; exit 1; }; done; echo \"derive: 12/12 plans roundtrip cleanly\"'",
     "derive-envelope": "tsx scripts/derive-envelope.ts",
     "assemble-prompts": "tsx scripts/assemble-prompts.ts --write",
     "calibrate": "tsx tools/calibrate-pipeline/run-calibration.ts",
@@ -20,7 +21,7 @@
     "typecheck:scripts": "tsc --noEmit -p tsconfig.json",
     "typecheck:all": "npm run typecheck:scripts && npm run typecheck",
     "test:parse": "playwright test --list outputs/tests/**/*.spec.ts",
-    "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run calibrate",
+    "validate:all": "npm run check:kb && npm run check:examples && npm run check:assemble && npm run check:envelope && npm run check:derive && npm run calibrate",
     "smoke": "npm run typecheck:all && npm run validate:all",
     "quickstart": "tsx scripts/quickstart-check.ts"
   },
