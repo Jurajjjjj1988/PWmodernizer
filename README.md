@@ -186,10 +186,16 @@ Stage 2 emits aggregate confidence (0..1):
 - **≥ 0.7**: opens code PR for human review.
 - **< 0.7**: triggers `verify.yml` (Opus second opinion). The verify report comments on the code PR; if it produces a `block` verdict, the code PR is labeled `verify:block` until a human resolves it.
 
-The aggregate confidence formula:
+The aggregate confidence formula (updated 2026-06-04 to reward output-quality signals):
 ```
-0.6 × plan_confidence + 0.3 × selector_quality + 0.1 × web_first_rate
+0.40 × plan_confidence
++ 0.25 × selector_quality
++ 0.10 × web_first_rate
++ 0.15 × smell_removal_rate    (source smells eliminated in output)
++ 0.10 × forbidden_absence     (1.0 if no forbidden patterns in output)
 ```
+
+Previous formula (0.6/0.3/0.1) capped output-driven confidence at the plan's own confidence — a high-quality Stage 2 migration of an ambitious plan was stuck below 0.7 even when all gates passed. New formula rewards the substantive work of Stage 2 and triggers verify only when there's real cause. See `scripts/evaluate.ts` `computeAggregateConfidence` for the implementation; the migration report includes a per-signal breakdown table.
 
 ## Known limitations (read before opening issues)
 
