@@ -1,15 +1,33 @@
-# Verify — multi-model consensus check.
+# Verify — CANDOR 2-agent consensus check.
 #
 # Only triggered when migrate.yml emits an aggregate confidence < 0.7. We
-# invoke a SECOND model (Opus, more expensive) with prompts/_assembled/verify.md to
-# cross-check the Sonnet-generated output. Disagreement on locator strategy
-# or assertion shape is flagged on the code PR.
+# invoke TWO Opus calls IN PARALLEL — an SDET lens and a Code Review lens —
+# each reading its own prompt and writing its own verdict report. A downstream
+# tally job aggregates the two verdicts via the consensus ladder.
 #
-# Why: CANDOR (arxiv:2506.02943) — multi-model consensus filters hallucinations
-# more reliably than prompt engineering. Different models hallucinate
-# differently, so agreement is signal.
+# Why split: CANDOR (arxiv:2506.02943) shows multi-model consensus filters
+# hallucinations more reliably than prompt engineering. Splitting one model
+# into two role-prompted *instances* approximates that benefit at lower cost
+# than running two distinct models: independent lenses (different mental
+# checklists) produce diverging false positives, which the tally rounds out.
+# Pattern reference: ai-debug-accelerator/debugger.py uses the same
+# independent-evaluator + conservative-tally shape.
+#
+# Verdict ladder (tally):
+#   2/2 SHIP IT  → SHIP IT
+#   1/2 SHIP IT  → FIX FIRST (the other lens flagged something concrete)
+#   0/2 SHIP IT  → START OVER (worst of the two if both rejected)
+#
+# Preserved from single-Opus design:
+#   - Output secret scan (now mirrored over both sub-reports + the combined)
+#   - persist-verify-metrics.ts row (reads the combined report's verdict)
+#   - confidence:high override on final SHIP IT (Opus pair overrides Sonnet
+#     confidence:low alarm)
+#   - Auto-regen on final START OVER (repository_dispatch with feedback +
+#     regen-attempt counter, cap 3)
+#   - Explicit guard when either sub-agent fails to produce a report
 
-name: Verify — multi-model consensus
+name: Verify — CANDOR 2-agent consensus
 
 on:
   workflow_dispatch:
@@ -36,8 +54,17 @@ permissions:
   id-token: write
 
 jobs:
-  verify:
+  # ---------------------------------------------------------------------------
+  # Two parallel sub-agents. Matrix strategy keeps the two definitions DRY —
+  # only `lens` differs. fail-fast: false because we want BOTH verdicts even
+  # if one sub-agent errors (the tally step needs to see the failure shape).
+  # ---------------------------------------------------------------------------
+  verify-subagent:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lens: [sdet, code-review]
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
@@ -55,12 +82,13 @@ jobs:
           npm ci
           npx tsx scripts/assemble-prompts.ts --write
 
-      - name: Run Claude (verify stage, Opus)
+      - name: Run Claude (verify stage, Opus, ${{ matrix.lens }} lens)
         env:
           # Trim whitespace + auto-route by token prefix. sk-ant-api → API key
           # (ANTHROPIC_API_KEY); sk-ant-oat → OAuth token (CLAUDE_CODE_OAUTH_TOKEN).
           RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           INPUT_BASENAME: ${{ inputs.input_basename }}
+          LENS: ${{ matrix.lens }}
         run: |
           set -euo pipefail
           TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
@@ -70,35 +98,48 @@ jobs:
             sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ;;
             *) echo "::warning::Unknown token prefix '$PREFIX'" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
           esac
+          # Human-readable name for the lens (only used inside the prompt
+          # boilerplate; the prompt files themselves declare their role).
+          case "$LENS" in
+            sdet)        LENS_LABEL="Senior SDET" ;;
+            code-review) LENS_LABEL="Code Reviewer" ;;
+            *) echo "::error::Unknown lens '$LENS'" ; exit 1 ;;
+          esac
+          PROMPT_FILE="prompts/_assembled/verify-${LENS}.md"
+          REPORT_PATH="outputs/reports/${INPUT_BASENAME}-verify-${LENS}.md"
           PROMPT=$(cat <<EOF
           You are running the Verify stage of the PWmodernizer pipeline as
-          a SECOND-OPINION verifier on a Sonnet-generated migration.
+          the ${LENS_LABEL} sub-agent in a CANDOR 2-agent consensus check.
+
+          A second sub-agent (the other lens) is running in PARALLEL on the
+          same migration and is BLIND to your output. Do not coordinate. Do
+          not duplicate the other lens's work. Stay in your lane.
 
           ## Your task
 
-          Read prompts/_assembled/verify.md — that's your full system prompt. Follow
-          it exactly. Be picky on locators and oracles (hallucinated tests
-          are high-cost); be lenient on cosmetic/stylistic differences.
+          Read ${PROMPT_FILE} — that's your full system prompt. Follow it
+          exactly. Be picky on the items your lens owns; defer on the items
+          marked "[other-lens owns — skip]".
 
           ## Input for this run
 
-          - Approved plan: outputs/plans/$INPUT_BASENAME.md
-          - Sonnet's output: outputs/tests/$INPUT_BASENAME
-          - Sonnet's report: outputs/reports/$INPUT_BASENAME.md
-          - Your verify report path: outputs/reports/$INPUT_BASENAME-verify.md
+          - Approved plan: outputs/plans/${INPUT_BASENAME}.md
+          - Sonnet's output: outputs/tests/${INPUT_BASENAME}
+          - Sonnet's report: outputs/reports/${INPUT_BASENAME}.md
+          - Your verify report path: ${REPORT_PATH}
 
           ## Context to load
 
-          1. prompts/_assembled/verify.md — your task spec (READ FIRST)
+          1. ${PROMPT_FILE} — your task spec (READ FIRST)
           2. config/migration-rules.md — what "good" looks like
-          3. outputs/plans/$INPUT_BASENAME.md
-          4. outputs/tests/$INPUT_BASENAME
-          5. outputs/reports/$INPUT_BASENAME.md
+          3. outputs/plans/${INPUT_BASENAME}.md
+          4. outputs/tests/${INPUT_BASENAME}
+          5. outputs/reports/${INPUT_BASENAME}.md
 
           ## Deliverable
 
-          ONE markdown file at the verify report path. Schema in
-          prompts/_assembled/verify.md. Verdict line MUST be EXACTLY one of (case-sensitive):
+          ONE markdown file at ${REPORT_PATH}. Schema in ${PROMPT_FILE}.
+          Verdict line MUST be EXACTLY one of (case-sensitive):
           - Verdict: SHIP IT
           - Verdict: FIX FIRST
           - Verdict: START OVER
@@ -111,7 +152,10 @@ jobs:
             --permission-mode acceptEdits \
             "$PROMPT"
 
-      - name: Verify report secret scan (mirror Stage 0)
+      - name: Sub-agent report secret scan (mirror Stage 0)
+        env:
+          LENS: ${{ matrix.lens }}
+          INPUT_BASENAME: ${{ inputs.input_basename }}
         shell: bash
         run: |
           set -euo pipefail
@@ -119,7 +163,7 @@ jobs:
           # (especially when discussing what was migrated). Mirror the input
           # + Stage 2 output secret-scan patterns. Warn but don't block —
           # the verify report is informational, not a final artifact.
-          REPORT="outputs/reports/${{ inputs.input_basename }}-verify.md"
+          REPORT="outputs/reports/${INPUT_BASENAME}-verify-${LENS}.md"
           if [ ! -f "$REPORT" ]; then exit 0; fi
           declare -a PATTERNS=(
             'AKIA[0-9A-Z]{16}|AWS access key'
@@ -135,7 +179,220 @@ jobs:
             PAT="${entry%|*}"
             LABEL="${entry#*|}"
             if grep -qnE "$PAT" "$REPORT"; then
-              echo "::warning file=$REPORT::Verifier emitted possible $LABEL — Opus may have quoted source verbatim. Review before merging the code PR."
+              echo "::warning file=$REPORT::Verifier (${LENS}) emitted possible $LABEL — Opus may have quoted source verbatim. Review before merging the code PR."
+            fi
+          done
+
+      - name: Upload sub-agent report
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: verify-report-${{ matrix.lens }}
+          path: outputs/reports/${{ inputs.input_basename }}-verify-${{ matrix.lens }}.md
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Tally — runs after BOTH sub-agents complete (needs:). Aggregates the two
+  # verdicts via the consensus ladder, writes a combined report at the
+  # legacy path (outputs/reports/<basename>-verify.md) so the existing
+  # persist-verify-metrics + PR-comment pipeline continues to work unchanged,
+  # then applies labels + fires auto-regen on START OVER.
+  #
+  # if: always() — we MUST run the tally even if one sub-agent failed. A
+  # missing sub-agent report is itself a signal (the tally treats it as
+  # START OVER, conservative fallback).
+  # ---------------------------------------------------------------------------
+  tally:
+    runs-on: ubuntu-latest
+    needs: verify-subagent
+    if: always()
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          ref: main
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+
+      - name: Install project deps
+        run: npm ci
+
+      - name: Download SDET sub-agent report
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        # continue-on-error: a missing report is intentionally handled by the
+        # tally script below (counts as START OVER, conservative fallback).
+        continue-on-error: true
+        with:
+          name: verify-report-sdet
+          path: outputs/reports/
+
+      - name: Download Code Review sub-agent report
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        continue-on-error: true
+        with:
+          name: verify-report-code-review
+          path: outputs/reports/
+
+      - name: Tally verdicts & write combined report
+        id: tally
+        env:
+          INPUT_BASENAME: ${{ inputs.input_basename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ------------------------------------------------------------------
+          # Tally logic — the CANDOR consensus ladder.
+          #
+          # Each sub-agent emits exactly one `- Verdict: <SHIP IT|FIX FIRST|
+          # START OVER>` line. The tally produces the final verdict by:
+          #
+          #   SHIP_COUNT = number of sub-agents that voted SHIP IT
+          #
+          #   SHIP_COUNT == 2 → SHIP IT  (full agreement, low false-positive)
+          #   SHIP_COUNT == 1 → FIX FIRST (one lens flagged something concrete)
+          #   SHIP_COUNT == 0 → START OVER (no SHIP IT votes — reject)
+          #
+          # Missing sub-agent report: counts as START OVER for that lens
+          # (conservative fallback — silent failure must not pass). This is
+          # the same posture migrate.yml takes when Stage 2 produces no
+          # report: assume the worst and block.
+          # ------------------------------------------------------------------
+          SDET_REPORT="outputs/reports/${INPUT_BASENAME}-verify-sdet.md"
+          CR_REPORT="outputs/reports/${INPUT_BASENAME}-verify-code-review.md"
+          COMBINED="outputs/reports/${INPUT_BASENAME}-verify.md"
+
+          parse_verdict() {
+            local file="$1"
+            if [ ! -f "$file" ]; then
+              echo "START OVER"
+              return
+            fi
+            local v
+            v=$(grep -E '^- Verdict:' "$file" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//' || true)
+            case "$v" in
+              "SHIP IT"|"FIX FIRST"|"START OVER") echo "$v" ;;
+              *) echo "START OVER" ;;   # unparseable → conservative
+            esac
+          }
+
+          SDET_VERDICT=$(parse_verdict "$SDET_REPORT")
+          CR_VERDICT=$(parse_verdict "$CR_REPORT")
+
+          SHIP_COUNT=0
+          [ "$SDET_VERDICT" = "SHIP IT" ] && SHIP_COUNT=$((SHIP_COUNT + 1))
+          [ "$CR_VERDICT"   = "SHIP IT" ] && SHIP_COUNT=$((SHIP_COUNT + 1))
+
+          case "$SHIP_COUNT" in
+            2) FINAL_VERDICT="SHIP IT" ;;
+            1) FINAL_VERDICT="FIX FIRST" ;;
+            0) FINAL_VERDICT="START OVER" ;;
+          esac
+
+          echo "SDET verdict:        $SDET_VERDICT"
+          echo "Code Review verdict: $CR_VERDICT"
+          echo "Ship count:          $SHIP_COUNT/2"
+          echo "Final verdict:       $FINAL_VERDICT"
+
+          # Expose for downstream steps (we still need it after the combined
+          # report is parsed by the labelling step).
+          {
+            echo "sdet_verdict=$SDET_VERDICT"
+            echo "code_review_verdict=$CR_VERDICT"
+            echo "ship_count=$SHIP_COUNT"
+            echo "final_verdict=$FINAL_VERDICT"
+          } >> "$GITHUB_OUTPUT"
+
+          # ------------------------------------------------------------------
+          # Write the combined report. Keep the legacy path
+          # (<basename>-verify.md) and legacy verdict-line shape so
+          # persist-verify-metrics.ts, the PR comment step, and any external
+          # tooling that already parses `- Verdict:` continue to work
+          # without changes. Include both sub-reports verbatim as the body
+          # so reviewers see the full per-lens reasoning on the code PR.
+          # ------------------------------------------------------------------
+          mkdir -p "$(dirname "$COMBINED")"
+          {
+            echo "# Verification report (CANDOR 2-agent consensus): ${INPUT_BASENAME}"
+            echo ""
+            echo "## Consensus tally"
+            echo "- SDET sub-agent verdict: ${SDET_VERDICT}"
+            echo "- Code Review sub-agent verdict: ${CR_VERDICT}"
+            echo "- Ship count: ${SHIP_COUNT}/2"
+            echo ""
+            echo "- Verdict: ${FINAL_VERDICT}"
+            echo ""
+            echo "_Ladder: 2/2 SHIP IT → SHIP IT; 1/2 → FIX FIRST; 0/2 → START OVER._"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## SDET sub-agent report"
+            echo ""
+            if [ -f "$SDET_REPORT" ]; then
+              cat "$SDET_REPORT"
+            else
+              echo "_SDET sub-agent did not produce a report. Counted as START OVER (conservative fallback)._"
+            fi
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Code Review sub-agent report"
+            echo ""
+            if [ -f "$CR_REPORT" ]; then
+              cat "$CR_REPORT"
+            else
+              echo "_Code Review sub-agent did not produce a report. Counted as START OVER (conservative fallback)._"
+            fi
+          } > "$COMBINED"
+
+          # Replicate the "## Disagreements" section by concatenating both
+          # sub-reports' tables. persist-verify-metrics.ts counts numeric
+          # rows under `## Disagreements`, so the combined report needs ONE
+          # such section to keep the count accurate. We synthesise it from
+          # the two per-lens "Disagreements (... lens)" tables.
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Disagreements"
+            echo ""
+            echo "_Combined from both lenses; row numbers re-indexed within each lens block._"
+            echo ""
+            if [ -f "$SDET_REPORT" ]; then
+              awk '/^## Disagreements/{flag=1; next} flag && /^## /{flag=0} flag' "$SDET_REPORT"
+            fi
+            if [ -f "$CR_REPORT" ]; then
+              awk '/^## Disagreements/{flag=1; next} flag && /^## /{flag=0} flag' "$CR_REPORT"
+            fi
+          } >> "$COMBINED"
+
+      - name: Combined report secret scan (defence-in-depth)
+        env:
+          INPUT_BASENAME: ${{ inputs.input_basename }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Each sub-agent already ran its own secret scan, but the combined
+          # report includes verbatim concatenation — re-scan the combined to
+          # catch any artifact of the concatenation step itself (e.g., the
+          # secret-scan pattern matched a fragment border).
+          REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
+          if [ ! -f "$REPORT" ]; then exit 0; fi
+          declare -a PATTERNS=(
+            'AKIA[0-9A-Z]{16}|AWS access key'
+            'sk_live_[0-9a-zA-Z]{24,}|Stripe live secret key'
+            'pk_live_[0-9a-zA-Z]{24,}|Stripe live publishable key'
+            'ghp_[A-Za-z0-9]{36}|GitHub PAT'
+            'github_pat_[A-Za-z0-9_]{82}|GitHub fine-grained PAT'
+            'xox[abprs]-[A-Za-z0-9-]{10,}|Slack token'
+            'sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{90,}|Anthropic API key'
+            'sk-proj-[A-Za-z0-9_-]{40,}|OpenAI project key'
+          )
+          for entry in "${PATTERNS[@]}"; do
+            PAT="${entry%|*}"
+            LABEL="${entry#*|}"
+            if grep -qnE "$PAT" "$REPORT"; then
+              echo "::warning file=$REPORT::Verifier (combined) emitted possible $LABEL — Opus may have quoted source verbatim. Review before merging the code PR."
             fi
           done
 
@@ -151,6 +408,8 @@ jobs:
           # Runs AFTER the secret scan (so manual edits to verdict get captured)
           # but BEFORE the PR-comment + label step (so a label-failure does not
           # block the metrics write). Non-fatal on error — DB is a cache.
+          # We read the COMBINED report so the verdict reflects the tally
+          # (not either individual sub-agent's verdict).
           REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
           if [ ! -f "$REPORT" ]; then
             echo "::warning::persist-verify-metrics: report $REPORT missing — skipping metrics write"
@@ -174,14 +433,17 @@ jobs:
           fi
           REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
           if [ ! -f "$REPORT" ]; then
-            # Opus stage failed silently — no report written. Without this
-            # guard, `gh pr comment --body-file` would fail mid-step and the
-            # case statement wouldn't run, leaving the PR unlabeled.
-            echo "::error::Verify report $REPORT was not produced by the Opus stage. Cannot label code PR — fall back to manual review."
+            # Tally stage failed silently — no combined report written.
+            # Without this guard, `gh pr comment --body-file` would fail
+            # mid-step and the case statement wouldn't run, leaving the PR
+            # unlabeled.
+            echo "::error::Combined verify report $REPORT was not produced by the tally stage. Cannot label code PR — fall back to manual review."
             exit 1
           fi
           gh pr comment "$PR_NUMBER" --body-file "$REPORT"
-          # Parse 3-level verdict: SHIP IT / FIX FIRST / START OVER
+          # Parse 3-level verdict from the combined report. The tally step
+          # emits exactly one `- Verdict: <X>` line in the consensus tally
+          # block, so the same regex as the single-Opus design works.
           VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//')
           case "$VERDICT" in
             "START OVER")
@@ -236,11 +498,13 @@ jobs:
                 exit 1
               fi
               NEXT_ATTEMPT=$((REGEN_COUNT + 1))
-              # Build feedback payload: full verify report as the freeform
-              # feedback text that plan.yml will splice into the analyze prompt
-              # (matches client_payload.slash_command.args.all shape used by
-              # the manual /regenerate flow — see plan.yml step 'Run Claude
-              # (analyze stage)' env REGENERATE_FEEDBACK).
+              # Build feedback payload: full combined verify report as the
+              # freeform feedback text that plan.yml will splice into the
+              # analyze prompt (matches client_payload.slash_command.args.all
+              # shape used by the manual /regenerate flow — see plan.yml
+              # step 'Run Claude (analyze stage)' env REGENERATE_FEEDBACK).
+              # The combined report includes BOTH sub-agents' reasoning, so
+              # Stage 2 gets both lenses' feedback in one shot.
               FEEDBACK=$(cat "$REPORT")
               # Construct the dispatch payload. plan.yml reads:
               #   client_payload.slash_command.args.named.input_path
@@ -296,14 +560,16 @@ jobs:
               ;;
             "SHIP IT")
               gh pr edit "$PR_NUMBER" --add-label "verify:ship-it"
-              # SHIP IT trumps the confidence:low label. Opus reviewed the
-              # output independently and approved — confidence < 0.7 was a
-              # false alarm from the Sonnet-side metric. Remove the
-              # confidence:low label so reviewers don't see conflicting signals.
-              # 'gh pr edit --remove-label' is idempotent (no-op if absent).
+              # SHIP IT trumps the confidence:low label. Both Opus sub-agents
+              # reviewed the output independently and approved — confidence
+              # < 0.7 was a false alarm from the Sonnet-side metric. Remove
+              # the confidence:low label so reviewers don't see conflicting
+              # signals. 'gh pr edit --remove-label' is idempotent (no-op if
+              # absent). Under CANDOR, SHIP IT means 2/2 lenses agreed — a
+              # stronger signal than the single-Opus design.
               gh pr edit "$PR_NUMBER" --remove-label "confidence:low" 2>/dev/null || true
               gh pr edit "$PR_NUMBER" --add-label "confidence:high" 2>/dev/null || true
-              echo "::notice::Verifier verdict: SHIP IT. confidence:low → confidence:high (Opus override)."
+              echo "::notice::Verifier verdict: SHIP IT (2/2 lenses). confidence:low → confidence:high (CANDOR override)."
               ;;
             *)
               echo "::warning::Unrecognized verdict '$VERDICT' — no label applied"
