@@ -20,6 +20,7 @@
     "metrics:report": "tsx scripts/metrics-report.ts",
     "metrics:export": "tsx scripts/metrics-export.ts",
     "dashboard": "tsx scripts/dashboard.ts",
+    "stress:test-stage0": "tsx scripts/test-stage0.ts",
     "lint": "eslint 'outputs/tests/**/*.ts'",
     "lint:fix": "eslint --fix 'outputs/tests/**/*.ts'",
     "typecheck": "tsc --noEmit -p outputs/tests/tsconfig.json",
