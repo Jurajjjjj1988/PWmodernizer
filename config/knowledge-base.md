@@ -1802,6 +1802,128 @@ await expect(page.getByRole('dialog')).toBeHidden();
 
 Rationale: Python's mirror of Java's KB-1.3.7. `find_elements(...)` returns a snapshot LIST at call time. Indexing `[0]` or counting via `len()` races against ANY UI change between the call and the read. Playwright `Locator` objects are LAZY and auto-retrying — `expect(locator).toHaveCount(N)` polls until match, and `getByRole(...)` with an accessible name eliminates the need to pick by position. If position is genuinely the only differentiator, `locator.nth(i)` exists but should be flagged as LOW confidence and reviewed.
 
+#### 1.4.18 `driver.execute_script("return document.querySelector(...)")` JS-bridge state probe
+
+```python
+# ANTI-PATTERN
+is_loaded = driver.execute_script("return window.app && window.app.loaded === true;")
+assert is_loaded
+```
+
+```ts
+// CANONICAL — wait for the user-visible signal that proves load
+await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
+```
+
+Rationale: `execute_script` reaches past WebDriver's API and probes the page's JS runtime directly. Tests pass when `window.app.loaded` is true but the visible UI hasn't actually rendered (asynchronous flush gap). Worse: the probe is invisible at code-review time — readers see `assert is_loaded` and don't know it's a JS-runtime read. Playwright's web-first assertions wait for what the user sees. Prevents `JsRuntimeProbeRaceUI` bug class.
+
+#### 1.4.19 `@pytest.fixture(scope="session")` for the WebDriver
+
+```python
+# ANTI-PATTERN
+@pytest.fixture(scope="session")
+def driver():
+    drv = webdriver.Chrome()
+    yield drv
+    drv.quit()
+```
+
+```ts
+// CANONICAL — Playwright defaults to fresh BrowserContext per test
+// playwright.config.ts: nothing special needed.
+test('isolated by default', async ({ page }) => { /* fresh */ });
+```
+
+Rationale: `scope="session"` allocates one driver for the whole pytest session — every test shares cookies, localStorage, and (often) URL state. Parallel `pytest-xdist` workers each get their own session, but inside a worker tests still pollute each other. Playwright's per-test `page` fixture is the right default. Translation: change `scope="session"` to `scope="function"` (or drop the fixture entirely and use Playwright's built-in). Prevents `SessionScopedDriverPollution` bug class.
+
+#### 1.4.20 `webdriver-manager` auto-installer in test code
+
+```python
+# ANTI-PATTERN
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
+
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+```
+
+```ts
+// CANONICAL — Playwright bundles its own browser binary management
+// $ npx playwright install chromium  (one-time, before CI runs)
+// In tests: just `await chromium.launch()` — no installer code.
+```
+
+Rationale: `webdriver-manager` reaches out to chromedriver.storage.googleapis.com on every test run. Network blip → flaky test that fails with a misleading "WebDriver init error" instead of "test assertion failed". Playwright separates browser provisioning (`npx playwright install`) from test execution. Prevents `WebDriverInstallerNetworkFlake` bug class.
+
+#### 1.4.21 `driver.window_handles[-1]` for new-tab switching
+
+```python
+# ANTI-PATTERN
+driver.find_element(By.LINK_TEXT, "Open in new tab").click()
+driver.switch_to.window(driver.window_handles[-1])
+assert "details" in driver.current_url
+```
+
+```ts
+// CANONICAL — explicit Playwright pattern with waitForEvent
+const newPagePromise = page.context().waitForEvent('page');
+await page.getByRole('link', { name: /open in new tab/i }).click();
+const newPage = await newPagePromise;
+await newPage.waitForLoadState();
+await expect(newPage).toHaveURL(/\/details/);
+```
+
+Rationale: `window_handles[-1]` assumes the new tab opened last in the list — true in single-action tests but unreliable when the SUT opens auxiliary popups (analytics, chat widget). Playwright `context.waitForEvent('page')` synchronizes on the exact new page event. Prevents `TabHandleArrayRace` bug class.
+
+#### 1.3.17 `driver.switchTo().frame(0)` index-based frame selection
+
+```java
+// ANTI-PATTERN
+driver.switchTo().frame(0);
+driver.findElement(By.id("widget-input")).sendKeys("hello");
+driver.switchTo().defaultContent();
+```
+
+```ts
+// CANONICAL — frame by name attribute, no manual context switching
+const widgetFrame = page.frameLocator('iframe[name="widget"]');
+await widgetFrame.getByLabel('Widget input').fill('hello');
+```
+
+Rationale: `frame(0)` picks the first iframe in document order — adds a hidden tracking iframe ahead of the real one and the test silently targets the tracker. Playwright `frameLocator` requires an explicit selector and supports auto-waiting/retry inside the frame just like top-level locators. Prevents `IndexedFrameDriftPicker` bug class.
+
+#### 1.3.18 `driver.switchTo().alert().accept()` without race protection
+
+```java
+// ANTI-PATTERN
+driver.findElement(By.id("delete")).click();
+driver.switchTo().alert().accept();   // throws NoAlertPresentException if alert hasn't fired yet
+```
+
+```ts
+// CANONICAL — register the dialog handler BEFORE the action
+page.once('dialog', async (dialog) => {
+  expect(dialog.message()).toMatch(/are you sure/i);
+  await dialog.accept();
+});
+await page.getByRole('button', { name: 'Delete' }).click();
+```
+
+Rationale: `switchTo().alert()` is synchronous — if the alert hasn't fired by the time it runs (race with click handler), Selenium throws and the test fails with no useful info. Playwright's `page.on('dialog')` is a registered handler that fires whenever a dialog appears, so the listener is in place before the click can trigger it. Prevents `AlertRaceFlake` bug class.
+
+#### 1.3.19 `By.linkText("Click here")` exact-match link locator
+
+```java
+// ANTI-PATTERN
+driver.findElement(By.linkText("Click here")).click();
+```
+
+```ts
+// CANONICAL
+await page.getByRole('link', { name: 'Click here' }).click();
+```
+
+Rationale: `By.linkText` requires the visible text to match exactly, including casing and whitespace. Designers update copy from "Click here" to "Click here →" (added arrow) → test breaks at the locator level, not at the assertion level. `getByRole('link', { name })` normalizes accessible names. Prevents `LinkTextExactCopyDrift` bug class.
+
 ---
 
 ## 2. Framework → Playwright TypeScript translation tables
