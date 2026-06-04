@@ -1,0 +1,348 @@
+# Regression — semantic (manual pre-release sweep).
+#
+# Catches "we changed a prompt and Stage 1 now generates worse plans" — the
+# class of regression that regression-test.yml (structural contracts) cannot
+# see. Runs Stage 1 against a sample of examples/<dir>/input.* and compares
+# the emitted plan to examples/<dir>/expected-plan.md via the loose-schema
+# matcher in scripts/semantic-regression-check.ts.
+#
+# WHY workflow_dispatch only: this workflow burns real Claude tokens (one
+# Sonnet analyze run per sample). Running it on every PR is too expensive;
+# v0.5 scope is a manual pre-release sweep. See ROADMAP "Semantic regression
+# workflow" for context.
+#
+# WHY a workflow not a script: the analyze step needs the same token-routing,
+# fragment-assembly, and inventory-grounding the production plan.yml has;
+# replicating that in a local script would silently drift.
+#
+# Workflow fails (exit 1) if more than 50% of samples FAIL. DEGRADED samples
+# surface as warnings but do not fail the run.
+
+name: Regression — semantic (manual pre-release sweep)
+
+on:
+  workflow_dispatch:
+    inputs:
+      sample_size:
+        description: 'How many examples to sample (1-12). Randomly selected if seed is empty.'
+        required: false
+        type: number
+        default: 3
+      seed:
+        description: 'Deterministic sample seed (any string). Empty = non-deterministic shuffle.'
+        required: false
+        type: string
+        default: ''
+      framework_filter:
+        description: 'Limit sampling to one framework dir prefix.'
+        required: false
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - bad-playwright
+          - selenium-java
+          - selenium-python
+          - cypress
+
+permissions:
+  contents: read
+  id-token: write # claude-code-action token exchange
+
+concurrency:
+  group: pwm-regression-semantic
+  cancel-in-progress: false
+
+jobs:
+  select-samples:
+    runs-on: ubuntu-latest
+    outputs:
+      samples_json: ${{ steps.pick.outputs.samples_json }}
+      sample_count: ${{ steps.pick.outputs.sample_count }}
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - id: pick
+        shell: bash
+        env:
+          SAMPLE_SIZE: ${{ inputs.sample_size }}
+          SEED: ${{ inputs.seed }}
+          FRAMEWORK_FILTER: ${{ inputs.framework_filter }}
+        run: |
+          set -euo pipefail
+          # Enumerate example dirs with both input.* and expected-plan.md.
+          # Skip examples/reference (style anchor, not a migration example).
+          mapfile -t ALL < <(
+            for d in examples/*/; do
+              base=$(basename "$d")
+              [ "$base" = "reference" ] && continue
+              # Must have at least one input.* and expected-plan.md.
+              if compgen -G "${d}input.*" > /dev/null && [ -f "${d}expected-plan.md" ]; then
+                echo "$base"
+              fi
+              # Multi-file (selenium-java-03) uses directory inputs/expected-output
+              # instead of input.* — accept those too.
+              if [ -d "${d}input" ] && [ -f "${d}expected-plan.md" ]; then
+                echo "$base"
+              fi
+            done | sort -u
+          )
+          # Framework filter.
+          if [ "$FRAMEWORK_FILTER" != "all" ]; then
+            FILTERED=()
+            for ex in "${ALL[@]}"; do
+              if [[ "$ex" == "$FRAMEWORK_FILTER"-* ]]; then
+                FILTERED+=("$ex")
+              fi
+            done
+            ALL=("${FILTERED[@]}")
+          fi
+          TOTAL=${#ALL[@]}
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "::error::No examples matched filter '$FRAMEWORK_FILTER'"
+            exit 1
+          fi
+          # Deterministic shuffle when SEED is set, else use $RANDOM. Both go
+          # through `sort -R --random-source=<(awk ...)` for a stable PRNG
+          # under a given seed.
+          if [ -n "$SEED" ]; then
+            # Seed-derived stream: SHA-256 of the seed string, repeated.
+            HASH=$(printf '%s' "$SEED" | sha256sum | awk '{print $1}')
+            RANDOM_SRC=$(mktemp)
+            for i in $(seq 1 200); do
+              printf '%s%d' "$HASH" "$i" | sha256sum | awk '{print $1}'
+            done > "$RANDOM_SRC"
+            mapfile -t SHUFFLED < <(printf '%s\n' "${ALL[@]}" | sort --random-source="$RANDOM_SRC" -R)
+            rm -f "$RANDOM_SRC"
+          else
+            mapfile -t SHUFFLED < <(printf '%s\n' "${ALL[@]}" | shuf)
+          fi
+          # Clamp sample_size to [1, total].
+          N=$SAMPLE_SIZE
+          if [ "$N" -lt 1 ]; then N=1; fi
+          if [ "$N" -gt "$TOTAL" ]; then N=$TOTAL; fi
+          PICKED=("${SHUFFLED[@]:0:$N}")
+          JSON=$(printf '%s\n' "${PICKED[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+          echo "samples_json=$JSON" >> "$GITHUB_OUTPUT"
+          echo "sample_count=$N" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Semantic regression — sample selection"
+            echo ""
+            echo "**Pool:** $TOTAL example(s) after filter \`$FRAMEWORK_FILTER\`"
+            echo "**Sampled:** $N"
+            echo "**Seed:** \`${SEED:-<non-deterministic>}\`"
+            echo ""
+            echo "Samples:"
+            for ex in "${PICKED[@]}"; do echo "- \`$ex\`"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  analyze:
+    needs: select-samples
+    if: needs.select-samples.outputs.sample_count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: ${{ fromJSON(needs.select-samples.outputs.samples_json) }}
+    outputs:
+      # Per-sample exit code is captured by the compare step; we surface only
+      # whether the analyze step ran. The final aggregate logic lives in the
+      # tally job.
+      ran: 'true'
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Resolve sample input path
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="examples/${{ matrix.sample }}"
+          # Prefer single-file input.* (.spec.ts / .java / .py); fall back to
+          # the multi-file input/ directory (selenium-java-03 shape).
+          INPUT=""
+          if compgen -G "${DIR}/input.*" > /dev/null; then
+            INPUT=$(compgen -G "${DIR}/input.*" | head -n1)
+          elif [ -d "${DIR}/input" ]; then
+            INPUT="${DIR}/input"
+          fi
+          if [ -z "$INPUT" ]; then
+            echo "::error::No input for sample ${{ matrix.sample }} (looked for input.* or input/)"
+            exit 1
+          fi
+          mkdir -p outputs/plans/_semantic
+          BASE=$(basename "$INPUT")
+          OUT="outputs/plans/_semantic/${{ matrix.sample }}.md"
+          EXPECTED="${DIR}/expected-plan.md"
+          echo "input_path=$INPUT" >> "$GITHUB_OUTPUT"
+          echo "input_basename=$BASE" >> "$GITHUB_OUTPUT"
+          echo "output_path=$OUT" >> "$GITHUB_OUTPUT"
+          echo "expected_path=$EXPECTED" >> "$GITHUB_OUTPUT"
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Assemble prompt fragments
+        shell: bash
+        run: npx tsx scripts/assemble-prompts.ts --write
+
+      - name: Run Claude (analyze stage)
+        env:
+          # Auto-route by token prefix — same logic as plan.yml / migrate.yml
+          # so token handling cannot drift between workflows.
+          RAW_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          INPUT_PATH: ${{ steps.resolve.outputs.input_path }}
+          OUTPUT_PATH: ${{ steps.resolve.outputs.output_path }}
+        run: |
+          set -euo pipefail
+          TOKEN=$(printf '%s' "$RAW_TOKEN" | tr -d ' \t\n\r')
+          PREFIX="${TOKEN:0:12}"
+          case "$PREFIX" in
+            sk-ant-oat*) export CLAUDE_CODE_OAUTH_TOKEN="$TOKEN" ;;
+            sk-ant-api*) export ANTHROPIC_API_KEY="$TOKEN" ;;
+            *) echo "::warning::Unknown token prefix '$PREFIX' — defaulting to ANTHROPIC_API_KEY" ; export ANTHROPIC_API_KEY="$TOKEN" ;;
+          esac
+          PROMPT=$(cat <<EOF
+          You are running the analyze stage of the PWmodernizer pipeline as
+          part of a semantic regression sweep.
+
+          ## Your task
+
+          Read prompts/_assembled/analyze.md — that is your full system prompt.
+          Follow it exactly.
+
+          ## Input for this run
+
+          - Input path: $INPUT_PATH (may be a single file OR a directory).
+          - Output plan path: $OUTPUT_PATH
+
+          ## Context to load (in this order)
+
+          1. prompts/_assembled/analyze.md — task spec (READ FIRST)
+          2. config/migration-rules.md — target style + structure contract
+          3. config/knowledge-base.md — anti-pattern catalog + API translations
+          4. examples/reference/company-style.spec.ts — style anchor
+          5. $INPUT_PATH — the input to migrate
+
+          ## Deliverable
+
+          ONE markdown file at $OUTPUT_PATH. NO code generation. Follow the
+          plan schema in config/migration-rules.md §9 — every section must
+          be present. Mark each locator with HIGH / MED / LOW confidence.
+          EOF
+          )
+          claude \
+            --model claude-sonnet-4-6 \
+            --max-turns 12 \
+            --print \
+            --permission-mode acceptEdits \
+            "$PROMPT"
+
+      - name: Compare emitted plan to canonical expected-plan
+        id: compare
+        shell: bash
+        run: |
+          set +e
+          npx tsx scripts/semantic-regression-check.ts \
+            --plan "${{ steps.resolve.outputs.output_path }}" \
+            --expected "${{ steps.resolve.outputs.expected_path }}" \
+            --sample-name "${{ matrix.sample }}"
+          RC=$?
+          # 0 = PASS, 1 = FAIL, 2 = DEGRADED (warning only).
+          case "$RC" in
+            0) VERDICT="PASS" ;;
+            2) VERDICT="DEGRADED" ;;
+            *) VERDICT="FAIL" ;;
+          esac
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+          # Emit a 1-line verdict file the tally job can read via artifact.
+          mkdir -p outputs/.semantic-verdicts
+          echo "${{ matrix.sample }} $VERDICT" > "outputs/.semantic-verdicts/${{ matrix.sample }}.txt"
+          exit 0
+
+      - name: Upload verdict artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: semantic-verdict-${{ matrix.sample }}
+          path: outputs/.semantic-verdicts/${{ matrix.sample }}.txt
+          retention-days: 7
+
+  tally:
+    needs: [select-samples, analyze]
+    if: always() && needs.select-samples.outputs.sample_count != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all verdict artifacts
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          path: verdicts
+          pattern: semantic-verdict-*
+          merge-multiple: true
+
+      - name: Aggregate verdicts and decide workflow outcome
+        shell: bash
+        env:
+          SAMPLE_COUNT: ${{ needs.select-samples.outputs.sample_count }}
+        run: |
+          set -euo pipefail
+          PASS=0; FAIL=0; DEGRADED=0; MISSING=0
+          declare -a ROWS=()
+          for f in verdicts/*.txt; do
+            [ -f "$f" ] || continue
+            read -r SAMPLE VERDICT < "$f"
+            ROWS+=("$SAMPLE $VERDICT")
+            case "$VERDICT" in
+              PASS) PASS=$((PASS + 1)) ;;
+              FAIL) FAIL=$((FAIL + 1)) ;;
+              DEGRADED) DEGRADED=$((DEGRADED + 1)) ;;
+              *) MISSING=$((MISSING + 1)) ;;
+            esac
+          done
+          TOTAL=$((PASS + FAIL + DEGRADED))
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "::error::No verdicts collected — analyze matrix produced no artifacts."
+            exit 1
+          fi
+          # Fail the workflow if more than 50% of *completed* samples FAIL.
+          # Samples that didn't produce a verdict (matrix step crashed before
+          # compare) are counted as missing and surface a warning.
+          {
+            echo "## Semantic regression — tally"
+            echo ""
+            echo "| Sample | Verdict |"
+            echo "|---|---|"
+            for row in "${ROWS[@]}"; do
+              SAMPLE="${row% *}"
+              VERDICT="${row##* }"
+              case "$VERDICT" in
+                PASS) BADGE=":white_check_mark: PASS" ;;
+                DEGRADED) BADGE=":warning: DEGRADED" ;;
+                FAIL) BADGE=":x: FAIL" ;;
+                *) BADGE=":question: $VERDICT" ;;
+              esac
+              echo "| \`$SAMPLE\` | $BADGE |"
+            done
+            echo ""
+            echo "**Totals:** $PASS PASS / $DEGRADED DEGRADED / $FAIL FAIL (of $TOTAL completed; expected $SAMPLE_COUNT)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::warning::$MISSING sample(s) produced no verdict (analyze step likely crashed)."
+          fi
+          # Threshold: workflow fails iff more than 50% of completed samples FAIL.
+          # Use integer math: FAIL * 2 > TOTAL  <=>  FAIL/TOTAL > 0.5.
+          if [ $((FAIL * 2)) -gt "$TOTAL" ]; then
+            echo "::error::Semantic regression FAILED — $FAIL/$TOTAL samples FAIL exceeds 50% gate."
+            exit 1
+          fi
+          if [ "$DEGRADED" -gt 0 ] || [ "$FAIL" -gt 0 ]; then
+            echo "::warning::Semantic regression non-clean — $FAIL FAIL / $DEGRADED DEGRADED (within 50% gate)."
+          else
+            echo "Semantic regression clean — $PASS/$TOTAL PASS."
+          fi
