@@ -196,11 +196,21 @@ Write exactly this structure to `outputs/reports/<input-basename>-verify.md`:
 
 ## Verdict
 
+<!-- include-begin: verdict-ladder -->
 Exactly one of three values. Pick the most severe one that applies — never round down.
 
-- **SHIP IT** — full agreement OR only stylistic/cosmetic differences. Safe to merge as-is. If you have `info`-level observations, list them under "Style notes" but the verdict stays SHIP IT.
+- **SHIP IT** — full agreement OR only stylistic/cosmetic differences (`info` severity only). Safe to merge as-is. If you have `info`-level observations, list them under "Style notes" but the verdict stays SHIP IT.
 - **FIX FIRST** — at least one `warn`-severity finding. Human reviewer should adjudicate (edit the test or the report) before merge. Generator's output is not wrong, but you would have done it differently in a defensible way.
 - **START OVER** — at least one `block`-severity finding. Reject migration and regenerate with the disagreements as feedback to Stage 2.
+
+Rounding rule: any single `block` → START OVER; any single `warn` (and zero `block`) → FIX FIRST; otherwise SHIP IT. Never round down to spare the generator. The verdict is the headline; the reviewer reads it first.
+
+Severity legend (used by the disagreement rows that feed the ladder):
+- **block** — would reject the migration on PR review; requires regeneration with feedback.
+- **warn** — human reviewer should pay attention before merging.
+- **info** — stylistic / preference difference; not a blocker.
+
+<!-- include-end: verdict-ladder -->
 
 ## Feedback for regeneration (only if verdict = START OVER)
 Concrete instructions Stage 2 needs to produce a corrected migration. Each item should be actionable, not philosophical:
