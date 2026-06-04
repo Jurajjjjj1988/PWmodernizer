@@ -160,6 +160,19 @@ function findInputFile(dir: string): string | null {
 
 function runAstDiff(fixtureName: string): FixtureResult {
   const fixtureDir = join(FIXTURES_ROOT, "ast-diff-trivial-check", fixtureName);
+  // Stem-match regression fixture (commit 041c342): exercise the
+  // resolveSourceFile recovery path by passing a deliberately nonexistent
+  // --output whose stem matches the real sibling .spec.ts. Without this
+  // branch the runner would either skip the fixture (no `output.*` file
+  // matches findOutputFile) or read the literal path and crash with ENOENT.
+  if (fixtureName === "good-06-stem-match-cross-lang") {
+    const r = spawnSync("npx", [
+      "tsx", join(SCRIPTS_DIR, "ast-diff-trivial-check.ts"),
+      "--input", join(fixtureDir, "input.java"),
+      "--output", join(fixtureDir, "EmployeesTest.java"),
+    ], { cwd: REPO_ROOT, encoding: "utf8" });
+    return buildResult(fixtureName, r, parseGolden(goldenPath("ast-diff-trivial-check", fixtureName)));
+  }
   const inputName = findInputFile(fixtureDir);
   const outputName = findOutputFile(fixtureDir);
   if (inputName === null || outputName === null) {

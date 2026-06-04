@@ -1,0 +1,11 @@
+# Exit 0. Regression guard for commit 041c342 — stem-match recovery in
+# resolveSourceFile. Runner branch passes --output EmployeesTest.java
+# (nonexistent), the script's stem-match resolves it to the sibling
+# EmployeesTest.spec.ts, then computes a real cross-language AST diff.
+# If stem-match silently regresses to throwing ENOENT, exit changes to 1
+# and this fixture fails. If the recovery short-circuits to a vacuous
+# pass, the substring checks below catch it.
+[tree-sitter-java]
+Input AST nodes (normalized):
+Output AST nodes (normalized):
+substantively non-trivial
