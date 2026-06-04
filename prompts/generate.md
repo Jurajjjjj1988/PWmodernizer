@@ -11,15 +11,18 @@ Two things to internalize before you start:
 1. **The plan is the source of truth.** Not the original test. Not your judgment. The plan. If the plan says use `getByText("Submit")` and you think `getByRole("button", { name: "Submit" })` is better, you cannot upgrade it — the reviewer already chose. Add a note in the migration report if you disagree, but **execute the plan as written**.
 2. **Cosmetic migrations fail.** If your output is the input with `cy.get` replaced by `page.locator` and nothing else, the AST-diff-not-trivial check rejects the PR. The plan exists precisely so you can deliver substantive structural and semantic improvements — execute them.
 
-## Required reading (in order)
+## Required reading (in order — envelope FIRST, then markdown)
 
-1. **`outputs/plans/<input-basename>.md`** — the approved plan markdown. Read it end-to-end. Note every locator translation row, every structural decision, every open question that was resolved.
-2. **`outputs/plans/<input-basename>.envelope.json`** (if present) — the machine-validatable contract. Read it as a SECOND source of truth alongside the markdown. The envelope's `scenarios[].id` values are the authoritative test IDs — emit `// plan:scenario=<id>` comments on each generated `test(...)` block matching the envelope. The envelope's `requiredPOMs` and `requiredFixtures` lists are the authoritative file list — produce exactly those, no more. If markdown and envelope disagree on anything substantive, treat the envelope as canonical for machine-checked items (scenario IDs, file paths) and the markdown as canonical for human-reasoned items (reviewer notes, risk callouts).
+1. **`outputs/plans/<input-basename>.envelope.json`** — the machine-validatable contract. READ THIS FIRST. ROADMAP v1.0 "Plan envelope enforcement" guarantees this file exists (Stage 1 emits it; a derive-envelope safety net fills it in if Stage 1 didn't; `plan-envelope-validate.ts` gates both stages). It is the canonical source for:
+   - `scenarios[].id` — emit one `// plan:scenario=<id>` comment on EVERY generated `test(...)` block. `scripts/plan-envelope-validate.ts --code` runs after generation and fails if any envelope scenario lacks a pin, if any pin is duplicated, or if any pin references an id not in the envelope.
+   - `requiredPOMs[]` / `requiredFixtures[]` — the authoritative file list. Produce exactly those paths, no more, no less. Missing paths fail the post-generation gate.
+   - `subtractive` flag — when `true` (bad-playwright source), only `@playwright/test`, relative paths, and `node:*` imports are allowed in the output. Foreign framework imports fail the post-generation gate.
+2. **`outputs/plans/<input-basename>.md`** — the approved plan markdown. Read end-to-end after the envelope. Use it for human-reasoned context: reviewer notes, risk callouts, anti-pattern fixes, locator translation rationale. When markdown and envelope disagree on anything machine-checked (scenario IDs, file paths, subtractive flag), the envelope wins.
 3. **The original input file** — at `inputs/<framework>/<name>/<file>`. You need this to preserve assertion behaviour and intent. **You are not migrating from the input — you are executing the plan against the input.**
 4. **`config/migration-rules.md`** — target conventions, locator priority, file structure, naming, formatting. Every rule applies.
 5. **`config/knowledge-base.md`** — referenced by the plan via KB-IDs. When a row in the anti-pattern catalog says "fix per KB-12", you may need to look up KB-12 for the canonical fix.
 
-If the plan file is missing or unreadable, **stop**. Emit `outputs/reports/<input-basename>.md` with body `BLOCKED: plan file missing at outputs/plans/<input-basename>.md` and exit. Do not attempt to regenerate the plan.
+If the envelope JSON is missing or unreadable, **stop**. Emit `outputs/reports/<input-basename>.md` with body `BLOCKED: envelope file missing at outputs/plans/<input-basename>.envelope.json` and exit. Same protocol if the markdown plan is missing.
 
 ## Your task — files to produce
 
@@ -77,6 +80,21 @@ Additional generator-specific rules (not covered by the forbidden-patterns list)
 - **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.
 - **No `!` non-null assertions on locators** — use `await expect(locator).toBeVisible()` to assert presence then act.
+- **Every test block carries a `// plan:scenario=<id>` pin (MANDATORY — ROADMAP v1.0 enforcement).** Place the comment on the line immediately above each `test(...)` call. The `<id>` must exactly match an envelope `scenarios[].id` — typically `1.1`, `1.2`, `1.3`, ... in the order scenarios were declared in the envelope. Every envelope scenario MUST receive exactly one pin; orphan pins (referring to ids not in the envelope) and duplicate pins are rejected. `scripts/plan-envelope-validate.ts --code` runs after generation and annotates each violation inline on the code PR. Example:
+
+  ```ts
+  // plan:scenario=1.1
+  test('signs in with valid credentials @positive', async ({ page }) => {
+    // ...
+  });
+
+  // plan:scenario=1.2
+  test('rejects an invalid password @negative', async ({ page }) => {
+    // ...
+  });
+  ```
+
+  Look at `examples/bad-playwright-01-flaky-waits/expected-output.spec.ts` for the canonical worked example. The pin must be a line comment (`//`), not a block comment (`/* */`) — the validator's ts-morph comment-range walker is matched against that exact prefix.
 - **Respect the plan's `## Hallucination-defense pins`.** The plan emits one numbered pin per MED/LOW-confidence locator with this contract: "If DOM contradicts: keep `{source locator}`, add WHY-comment `'{Q-id} unresolved'`. Reviewer fallback: `{specific action}`." Stage 2 MUST NOT promote a MED/LOW locator to a hallucinated `getByRole(...)`/`getByLabel(...)` without the pinned evidence. If you don't have evidence the pin's assumed locator is correct (you're not running against a real DOM in Stage 2), emit the assumed-target locator AND attach the pin's WHY-comment verbatim — this preserves the fallback contract for the reviewer.
 
 ## Execution algorithm (the order you should work in)
@@ -171,6 +189,7 @@ These will get your output rejected on PR review (or worse, merged and break tru
 
 9. **Leaving `// TODO`s without plan Q-id reference.** If a TODO doesn't tie back to a specific plan open question or risk callout, it's noise and someone has to investigate from scratch.
 10. **Test titles starting with "should".** Verb phrase ("opens checkout when cart has items"), per `migration-rules.md` and `test-organization`.
+11. **Missing or wrong `// plan:scenario=<id>` pins on test blocks.** Per ROADMAP v1.0 "Plan envelope enforcement", every generated `test(...)` block needs a `// plan:scenario=<id>` comment immediately above it, with `<id>` matching exactly one envelope `scenarios[].id`. Missing pins, duplicate pins, and orphan pins (id not in envelope) all fail the `plan-envelope-validate.ts --code` gate in `migrate.yml`. This is the LPW contract closure (arXiv 2411.14503) — the envelope says what scenarios must exist; the pins prove they were generated.
 
 ## Tone and style of the generated code
 

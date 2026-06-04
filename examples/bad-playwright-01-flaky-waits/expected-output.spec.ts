@@ -12,6 +12,7 @@ test.describe('Acme Shop login', () => {
     await page.goto('https://shop.acme.test/login');
   });
 
+  // plan:scenario=1.1
   test('signs in with valid credentials @positive', async ({ page }) => {
     await page.getByLabel('Email').fill('jane.doe@acme.test');
     await page.getByLabel('Password').fill('Sup3rSecret!');
@@ -20,6 +21,7 @@ test.describe('Acme Shop login', () => {
     await expect(page.getByRole('heading', { name: /welcome back, jane/i })).toBeVisible();
   });
 
+  // plan:scenario=1.2
   test('rejects an invalid password @negative', async ({ page }) => {
     await page.getByLabel('Email').fill('jane.doe@acme.test');
     await page.getByLabel('Password').fill('wrong-password');

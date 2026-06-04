@@ -110,19 +110,33 @@ jobs:
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: Validate plan envelope (LPW/Routine contract)
+      - name: Validate plan envelope BEFORE reading plan body (FIRST gate — fail-fast contract)
         shell: bash
         run: |
           set -euo pipefail
+          # ROADMAP v1.0 "Plan envelope enforcement": Stage 2 MUST validate
+          # the envelope before any prompt assembly, inventory build, or
+          # Claude invocation. The envelope is the machine contract that
+          # tells Stage 2 which scenarios MUST appear, which POMs/fixtures
+          # MUST be produced, and whether the migration is subtractive.
+          # If the envelope is invalid we waste $0 of tokens — bail now.
           BASE="${{ needs.guard.outputs.input_basename }}"
           PLAN="${{ needs.guard.outputs.plan_path }}"
           ENV="outputs/plans/${BASE}.envelope.json"
+          # Safety net (commits a3a6cc5 + 1d775c3 + 31a2bfa) — derive from
+          # markdown when the envelope sidecar is missing. Keeps Stage 2
+          # forward-compatible with any plan that pre-dates the dual-output
+          # mandate. Does NOT loosen plan-envelope-validate.ts.
           if [ ! -f "$ENV" ]; then
-            # Safety net (same as plan.yml): derive from markdown if missing.
-            # Stage 2 should never run without an envelope contract.
-            echo "::notice::Envelope $ENV missing — deriving from markdown plan."
+            echo "::warning::Stage 2 envelope $ENV missing — deriving from markdown plan ($PLAN). Stage 1 should have produced this; safety-net engaged."
             npx tsx scripts/derive-envelope.ts --plan "$PLAN" --out "$ENV"
+          else
+            echo "Stage 2 envelope present at $ENV — proceeding with strict validation."
           fi
+          # Strict schema validation — same call as `npm run check:envelope`.
+          # Stage 2 reads the envelope alongside the markdown; envelope is
+          # canonical for scenario IDs and required file paths (see
+          # prompts/_assembled/generate.md "Required reading").
           npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
           echo "has_envelope=true" >> "$GITHUB_OUTPUT"
         id: envelope
@@ -407,17 +421,27 @@ jobs:
             --input "${{ needs.guard.outputs.input_path }}" \
             --output "outputs/tests/${{ needs.guard.outputs.input_basename }}"
 
-      - name: Plan-vs-code coverage check (LPW contract closure)
+      - name: Plan-vs-code coverage check (LPW contract closure — unified envelope --code mode)
         shell: bash
         run: |
           set -euo pipefail
-          # Closes the LPW pattern (arXiv 2411.14503): envelope is the contract,
-          # this script enforces it post-generation. Validates every
-          # scenarios[].id has a // plan:scenario=<id> comment in the spec,
-          # requiredPOMs/Fixtures files exist, subtractive plans import only
-          # @playwright/test + relative paths. Strict mode by default.
+          # ROADMAP v1.0 "Plan envelope enforcement": every scenarios[].id in
+          # the envelope must appear as exactly one `// plan:scenario=<id>`
+          # comment in the generated spec. This is the unified post-Stage-2
+          # gate via plan-envelope-validate.ts --code: schema + scenario pin
+          # coverage + requiredPOMs/Fixtures existence + subtractive import
+          # discipline, all in one strict call.
           BASE="${{ needs.guard.outputs.input_basename }}"
           ENV="outputs/plans/${BASE}.envelope.json"
+          OUT_DIR="outputs/tests"
+          # Primary gate: unified --code mode (the new --code mode per ROADMAP).
+          npx tsx scripts/plan-envelope-validate.ts \
+            --envelope "$ENV" \
+            --code "$OUT_DIR"
+          # Defense-in-depth: dedicated plan-code-coverage.ts sibling validator
+          # carries identical checks plus orphan/duplicate-pin annotations on
+          # each violating line. Kept to preserve commit a3a6cc5+1d775c3+31a2bfa
+          # gate posture; both must pass.
           npx tsx scripts/plan-code-coverage.ts \
             --envelope "$ENV" \
             --output "outputs/tests/${BASE}"

@@ -93,9 +93,9 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 
 ### Plan envelope enforcement
 
-- [ ] Stage 1 emits BOTH the markdown plan AND the JSON envelope (currently only markdown)
-- [ ] Stage 2 validates the envelope before reading the plan
-- [ ] `// plan:scenario=<id>` comments mandated in every test block, verified by `plan-envelope-validate.ts --code`
+- [x] Stage 1 emits BOTH the markdown plan AND the JSON envelope (analyze.md mandates dual-output; plan.yml gate + derive-envelope safety net)
+- [x] Stage 2 validates the envelope before reading the plan (migrate.yml "Validate plan envelope BEFORE reading plan body" step runs before assemble-prompts + inventory + Claude)
+- [x] `// plan:scenario=<id>` comments mandated in every test block, verified by `plan-envelope-validate.ts --code` (canonical example + generate.md hard rule + `npm run check:envelope:code`)
 
 ### Multi-agent verify (CANDOR pattern)
 

@@ -415,22 +415,31 @@ jobs:
           fi
           echo "Plan validated."
 
-      - name: Validate plan envelope JSON (LPW/Routine contract)
+      - name: Validate plan envelope JSON (LPW/Routine contract — Stage 1 dual-output mandate)
         if: steps.dedup.outputs.skip == 'false'
         shell: bash
         run: |
           set -euo pipefail
+          # Stage 1 MUST emit BOTH outputs/plans/<basename>.md AND
+          # outputs/plans/<basename>.envelope.json per ROADMAP v1.0
+          # "Plan envelope enforcement". prompts/_assembled/analyze.md
+          # spells out the dual-deliverable contract; this step gates it.
           BASE="${{ steps.idempotency.outputs.input_basename }}"
           PLAN="outputs/plans/${BASE}.md"
           ENV="outputs/plans/${BASE}.envelope.json"
+          # Safety net (commits a3a6cc5 + 1d775c3 + 31a2bfa): if Claude did
+          # not emit the envelope JSON alongside the markdown, derive it
+          # from the markdown plan so Stage 2 always has a machine-readable
+          # contract. derive-envelope is owned by the metrics agent — do
+          # NOT loosen plan-envelope-validate.ts to compensate.
           if [ ! -f "$ENV" ]; then
-            # Safety net: if Claude didn't emit the envelope, derive it from
-            # the markdown plan. This guarantees Stage 2 always has a
-            # machine-readable contract to validate against.
-            echo "::notice::Envelope missing — deriving from markdown plan."
+            echo "::warning::Stage 1 envelope $ENV missing — Claude did not emit the JSON sidecar. Deriving from markdown plan as safety net (analyze.md mandates dual output)."
             npx tsx scripts/derive-envelope.ts --plan "$PLAN" --out "$ENV"
+          else
+            echo "Stage 1 envelope present at $ENV (dual-output contract satisfied)."
           fi
-          # Schema validation via the canonical validator (gates on real shape).
+          # Strict schema validation via the canonical validator. Same
+          # call as `npm run check:envelope`; fail-fast on any divergence.
           npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
 
       - name: Compute severity histogram

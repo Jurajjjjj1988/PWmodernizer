@@ -21,10 +21,12 @@ If any of these files is missing, **stop and emit a plan that says "BLOCKED: mis
 
 ## Your task
 
-Produce **two files** — a human-readable markdown plan AND a machine-validatable JSON envelope (LPW/Routine pattern):
+Produce **TWO files** — both are mandatory deliverables. The pipeline FAILS at Stage 2 if either is missing or malformed (plan.yml's "Validate plan envelope JSON" step is the gate). This is the v1.0 ROADMAP "Plan envelope enforcement" contract:
 
 1. `outputs/plans/<input-basename>.md` — the markdown plan (this is the human-reviewable artefact)
-2. `outputs/plans/<input-basename>.envelope.json` — the JSON sidecar conforming to `scripts/plan-envelope.schema.json` (this is the machine contract Stage 2 reads)
+2. `outputs/plans/<input-basename>.envelope.json` — the JSON sidecar conforming to `scripts/plan-envelope.schema.json` (this is the machine contract Stage 2 reads BEFORE the markdown)
+
+**Both files must be written. Neither is optional.** A safety net derives the envelope from the markdown if you forget — but a derived envelope is lower fidelity than the one you would write yourself (it cannot infer scenario `id`, `userAction`, or `expectedAssertions` strings with the same nuance). Always emit BOTH explicitly.
 
 `<input-basename>` is the input filename without its source extension. Examples:
 - `inputs/cypress/login-flow/login.cy.js` → `outputs/plans/login.md` + `outputs/plans/login.envelope.json`
@@ -32,6 +34,8 @@ Produce **two files** — a human-readable markdown plan AND a machine-validatab
 - `inputs/selenium-python/modal/test_modal.py` → `outputs/plans/test_modal.md` + `outputs/plans/test_modal.envelope.json`
 
 The markdown plan must follow the schema defined in `config/migration-rules.md` §9. The JSON envelope must conform to `scripts/plan-envelope.schema.json` and stay consistent with the markdown (same scenarios, same locator table, same pins). See `examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json` for the canonical worked example.
+
+**Critical for Stage 2:** `scenarios[].id` (e.g. `"1.1"`, `"1.2"`) is the JOIN KEY between the envelope and the generated test code. Stage 2 emits one `// plan:scenario=<id>` comment per generated `test(...)` block; `scripts/plan-envelope-validate.ts --code` enforces a 1:1 match. Pick scenario IDs deliberately — they become permanent identifiers the human reviewer will see in the code PR.
 
 **Do not emit code in this stage.** No `.ts` files, no Playwright snippets longer than a single locator example for illustration. Code generation is Stage 2's job. If you find yourself writing a `test(...)` block, stop — that is out of scope.
 
@@ -240,10 +244,10 @@ These will get your plan rejected on review:
 
 ## Output constraints
 
-- **Exactly two files**: `outputs/plans/<input-basename>.md` + `outputs/plans/<input-basename>.envelope.json`.
+- **Exactly TWO files, BOTH mandatory**: `outputs/plans/<input-basename>.md` + `outputs/plans/<input-basename>.envelope.json`. Skipping either fails the `plan-envelope-validate.ts` gate in `plan.yml`.
 - **No other files written.** Stage 2 is responsible for code, reports, and POM/fixture files. If you find yourself wanting to write `outputs/tests/...`, stop.
 - **Markdown plan**: GitHub-flavored. Tables for the catalog and translation table.
-- **JSON envelope**: conforms to `scripts/plan-envelope.schema.json` (Draft 2020-12). MUST stay consistent with the markdown — same scenarios, same locator table, same pins, same metrics. The envelope is the machine contract; Stage 2 reads it before reading the markdown.
+- **JSON envelope**: conforms to `scripts/plan-envelope.schema.json` (Draft 2020-12). MUST stay consistent with the markdown — same scenarios, same locator table, same pins, same metrics. The envelope is the machine contract; Stage 2 reads it before reading the markdown. Scenario `id` values become `// plan:scenario=<id>` pins in Stage 2's generated code (verified by `plan-envelope-validate.ts --code`).
 - **English.** Code identifiers stay as they are; commentary in English.
 
-When you are done, the final actions in your transcript should be writing the markdown plan and the envelope JSON. Do not summarize them in chat after writing — the files are the deliverables, the chat output is noise.
+When you are done, the final actions in your transcript should be writing the markdown plan AND the envelope JSON (in that order). Do not summarize them in chat after writing — the files are the deliverables, the chat output is noise. **Verify your transcript shows two `Write` tool calls before exiting** — one for `.md`, one for `.envelope.json`.

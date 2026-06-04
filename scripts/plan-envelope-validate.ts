@@ -108,14 +108,22 @@ function collectScenarioPins(sf: SourceFile): Map<string, number> {
   return out;
 }
 
-/** Resolve a path that may be a file or a directory of test files. */
+/**
+ * Resolve a path that may be a file or a directory of test files.
+ *
+ * Directory mode: only `*.spec.ts` files are scanned (per ROADMAP v1.0 "Plan
+ * envelope enforcement" — scenario pins live on test blocks, which only ever
+ * appear in spec files; POMs and fixtures intentionally have no pins). A bare
+ * file path is treated as a leaf spec regardless of extension so callers can
+ * point at a single non-`.spec.ts` file for unit tests / one-offs.
+ */
 function resolveCodeFiles(codeArg: string): string[] {
   const abs = resolve(codeArg);
   if (!existsSync(abs)) return [];
   const st = statSync(abs);
   if (st.isFile()) return [abs];
   const proj = new Project({ useInMemoryFileSystem: false });
-  proj.addSourceFilesAtPaths(join(abs, "**/*.{ts,tsx,spec.ts}"));
+  proj.addSourceFilesAtPaths(join(abs, "**/*.spec.ts"));
   return proj.getSourceFiles().map((sf) => sf.getFilePath());
 }
 
