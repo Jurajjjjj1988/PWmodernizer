@@ -35,6 +35,35 @@ const AWS_KEY_RE = /AKIA[0-9A-Z]{16}/;
 const SIZE_FLOOR = 200;
 const TOKEN_CAP = 25000;
 
+/**
+ * Expected verdict per stress fixture. Used to validate that real shell
+ * tools (`file`, `wc`) still classify each fixture the way we documented
+ * in inputs/_stress/README.md. If you add a fixture, add a row here too.
+ *
+ * `bom-encoded.ts` is PASS (not WARN) because `file --mime-encoding -b`
+ * reports `utf-8` for BOM-prefixed UTF-8 — see README "surface fixture"
+ * note. Same pattern: `binary-as-text.spec.ts` is WARN (not REJECT)
+ * because Stage 0's encoding gate is non-blocking and there is no
+ * separate mime-type rejection step yet.
+ */
+const EXPECTED_VERDICTS: Record<string, 'PASS' | 'REJECT' | 'WARN'> = {
+  'empty.spec.ts': 'REJECT',
+  'too-small.spec.ts': 'REJECT',
+  'huge.spec.ts': 'REJECT',
+  'no-test-markers.spec.ts': 'REJECT',
+  'latin1.ts': 'WARN',
+  'mixed-encoding.spec.ts': 'WARN',
+  'binary-as-text.spec.ts': 'WARN',
+  'with-real-aws-key.spec.ts': 'WARN',
+  'bom-encoded.ts': 'PASS',
+  'clean-pass.spec.ts': 'PASS',
+  'mixed-languages.spec.ts': 'PASS',
+  'single-long-line.spec.ts': 'PASS',
+  'test-markers-in-comments-only.spec.ts': 'PASS',
+  'near-token-limit.spec.ts': 'PASS',
+  'unicode-emoji-test.spec.ts': 'PASS',
+};
+
 function parseArgs(argv: string[]): { dir: string } {
   let dir = 'inputs/_stress';
   for (let i = 0; i < argv.length; i++) {
@@ -193,6 +222,44 @@ function main(): void {
   console.log(
     `Totals: PASS=${counts.PASS ?? 0}  REJECT=${counts.REJECT ?? 0}  WARN=${counts.WARN ?? 0}`,
   );
+
+  // Validate each fixture's actual verdict against EXPECTED_VERDICTS.
+  // Print mismatches as a table; exit non-zero only if a fixture present
+  // in EXPECTED_VERDICTS produced the wrong verdict, OR an expected
+  // fixture is missing from disk. Unknown fixtures (no expected entry)
+  // are reported but not fatal — lets contributors add a fixture and
+  // see actual behaviour first, then pin it.
+  const expectedNames = new Set(Object.keys(EXPECTED_VERDICTS));
+  const actualByName = new Map(
+    results.map((r) => [r.file.split('/').pop() ?? r.file, r.verdict] as const),
+  );
+  const mismatches: string[] = [];
+  const unknown: string[] = [];
+  for (const [name, expected] of Object.entries(EXPECTED_VERDICTS)) {
+    const actual = actualByName.get(name);
+    if (actual === undefined) {
+      mismatches.push(`MISSING: ${name} (expected ${expected}, not on disk)`);
+    } else if (actual !== expected) {
+      mismatches.push(`MISMATCH: ${name} expected=${expected} actual=${actual}`);
+    }
+  }
+  for (const r of results) {
+    const name = r.file.split('/').pop() ?? r.file;
+    if (!expectedNames.has(name)) {
+      unknown.push(`UNPINNED: ${name} actual=${r.verdict} (add to EXPECTED_VERDICTS)`);
+    }
+  }
+  if (unknown.length > 0) {
+    console.log('');
+    console.log(unknown.join('\n'));
+  }
+  if (mismatches.length > 0) {
+    console.log('');
+    console.log(mismatches.join('\n'));
+    process.exit(1);
+  }
+  console.log('');
+  console.log(`All ${Object.keys(EXPECTED_VERDICTS).length} pinned fixtures produced expected verdicts.`);
 }
 
 main();
