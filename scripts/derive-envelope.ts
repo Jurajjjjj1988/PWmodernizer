@@ -176,7 +176,7 @@ function parseLocatorTable(body: string): LocatorRow[] {
     const confCell = row.find((c) => /^(high|med|medium|low|h|m|l)$/i.test(c.trim()));
     const confidence = confCell ? normaliseConfidence(confCell) : "med";
     const notesCell = row.filter((c) => c !== original && c !== target && c !== confCell);
-    const notes = notesCell.length > 0 ? (notesCell.sort((a, b) => b.length - a.length)[0] ?? "") : "";
+    const notes = notesCell.length > 0 ? (notesCell.toSorted((a, b) => b.length - a.length)[0] ?? "") : "";
     return { original, target, confidence, notes };
   }).filter((r): r is LocatorRow => r !== null);
 }
@@ -256,8 +256,7 @@ function parseHallucinationPins(body: string): PinEntry[] {
   return pins;
 }
 
-function parseScenarios(summaryBody: string): ScenarioEntry[] {
-  // Look for h3 "User-perceivable assertion checklist" subsection.
+function extractChecklistAssertions(summaryBody: string): string[] {
   const lines = summaryBody.split("\n");
   let inChecklist = false;
   const assertions: string[] = [];
@@ -267,24 +266,25 @@ function parseScenarios(summaryBody: string): ScenarioEntry[] {
       continue;
     }
     if (inChecklist && /^##/.test(line)) break;
-    if (inChecklist) {
-      const m = /^-\s*\[\s*[x ]\s*\]\s+(.+)$/i.exec(line.trim());
-      if (m?.[1]) assertions.push(m[1].trim());
-    }
+    if (!inChecklist) continue;
+    const m = /^-\s*\[\s*[x ]\s*\]\s+(.+)$/i.exec(line.trim());
+    if (m?.[1]) assertions.push(m[1].trim());
   }
-  if (assertions.length === 0) {
-    // No checklist found — emit a single placeholder scenario so envelope
-    // is valid. Reviewer/Stage 2 must enrich.
-    return [
-      {
-        id: "1.1",
-        title: "primary scenario (derived placeholder)",
-        userAction: "Derived from markdown without an assertion checklist; reviewer must enrich.",
-        expectedAssertions: ["TODO: populate from source test"],
-      },
-    ];
-  }
-  // Group assertions into 1-2 scenarios by simple "After valid"/"After invalid" pattern.
+  return assertions;
+}
+
+function placeholderScenario(): ScenarioEntry[] {
+  return [
+    {
+      id: "1.1",
+      title: "primary scenario (derived placeholder)",
+      userAction: "Derived from markdown without an assertion checklist; reviewer must enrich.",
+      expectedAssertions: ["TODO: populate from source test"],
+    },
+  ];
+}
+
+function groupAssertionsIntoScenarios(assertions: string[]): ScenarioEntry[] {
   const positive = assertions.filter((a) => /valid|positive|success/i.test(a) && !/invalid/i.test(a));
   const negative = assertions.filter((a) => /invalid|negative|error/i.test(a));
   const scenarios: ScenarioEntry[] = [];
@@ -313,6 +313,11 @@ function parseScenarios(summaryBody: string): ScenarioEntry[] {
     });
   }
   return scenarios;
+}
+
+function parseScenarios(summaryBody: string): ScenarioEntry[] {
+  const assertions = extractChecklistAssertions(summaryBody);
+  return assertions.length === 0 ? placeholderScenario() : groupAssertionsIntoScenarios(assertions);
 }
 
 function deriveEnvelope(md: string, inputBasename: string): Envelope {
