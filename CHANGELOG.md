@@ -6,7 +6,30 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
-### Added (2026-06-04 session — 17 commits, post-PROVEN-E2E hardening)
+### Added (2026-06-04 late session — 80+ total commits, second hardening pass)
+- **scripts/derive-envelope.ts** (`31a2bfa` + `c3215a4`): markdown plan → JSON envelope parser. Works on all 12 example plans + the real flaky-waits.spec.ts plan. Wired as safety net in plan.yml + migrate.yml so envelope ALWAYS exists. Backfilled `outputs/plans/flaky-waits.spec.ts.envelope.json` for the existing real plan.
+- **Confidence formula v2** (`4e2f16e`): 5-signal output-aware (0.4 plan + 0.25 selector + 0.1 webfirst + 0.15 smell-removal + 0.1 forbidden-absence). PR #2's high-quality output now reads 0.75 instead of 0.65 — triggers verify only when there's real cause. Plus per-signal breakdown table in the report.
+- **Prompt fragment expansion in CI** (`60c6b51`): CRITICAL silent bug fix. Workflows now run `npm run assemble-prompts` and Claude reads `prompts/_assembled/*.md`. Previously Claude saw raw `{{include:...}}` markers and missed fragment content. Affected all 3 prompts (analyze, generate, verify).
+- **Assemble stale detection** (`9f8571b`): `assemble-prompts --check` now also fails if committed `prompts/_assembled/` files don't match what would be generated from sources. Catches "edited fragment, forgot to run --write" silent regressions.
+- **playwright.config.ts for outputs/tests/** (`992a1e2`): enables local `npx playwright test` against `MIGRATION_TARGET_URL`. Stage 2 prompt now knows about the runtime config (`d7f91e9`).
+- **Verify HARD gate** (`13d2544`): START OVER verdict exits 1 (failed check) so branch protection can hard-block merge. Plus `actions: write` permission fix (`7c6bf16`) for trigger-verify.
+- **kb-validate scope** (`e08e424`): now also scans `outputs/plans/*.md` for KB-ID references — catches Claude-cited dangling KB-IDs in real Stage 1 emissions.
+- **Local commands**: `npm run quickstart` (10-check friendly onboarding, `3887bd1`+`569427f`), `npm run smoke` (now typecheck:all + 6 validators + eslint, `4da3248`+`c69ce24`), `npm run check:derive` (`b9b4feb`), `npm run validate:all`, `npm run derive-envelope`.
+- **Pre-existing TS strict fixes** (`4e2f16e` + `b867d60` + `240b42b`): `noUncheckedIndexedAccess` errors in `longestCommonSubstring`, `typecheck:all` script, `tools/**/*.ts` added to root tsconfig include.
+- **GitHub project files** (`4a35198` + `21d9f0b`): bug_report.md + migration_quality.md issue templates; PULL_REQUEST_TEMPLATE.md; CODEOWNERS.
+- **CONTRIBUTING.md** (`ac2f953`): onboarding + PR impact tier + reviewer contract + project values.
+- **ROADMAP.md** (`634d0be`): v0.4 / v0.5 / v1.0 / beyond + research backlog with arXiv refs.
+- **CHANGELOG.md** (`5fef3bf`): Keep-a-Changelog format.
+- **Stage 2 fixes**: `outputs/.snippets-inventory.md` + `outputs/.lint-errors.md` gitignored as transient (`e6998de`); `mkdirSync(dirname(...))` before `writeFileSync` in evaluate.ts (`6fce503`); `find -name '*.spec.ts'` replacing bare glob in 3 workflows (`7e7648b` + `42d1959`); `playwright.config.ts` excluded from forbidden-pattern grep (`cc8df98`); PR body branches on `github.event_name` (`2a94c56`).
+- **CI hardening**: `actions/checkout` + `actions/setup-node` bumped v4→v6 for Node 24 runtime (`b2cf959`); `regression-test.yml` end-to-end `/regenerate` wiring check (4 assertions, `0c17581`); `outputs/plans/*.envelope.json` validated by regression-test (`4b26eb5`); trigger paths now include `tools/`, `package.json`, `outputs/plans/*.envelope.json` (`dd3372e`).
+- **Verify report secret scan** (`482ac1e`): mirror of Stage 0 + Stage 2 — catches Opus quoting source credentials.
+- **Verify report missing guard** (`9bcc590`): explicit error if Opus failed to write report.
+- **Verdict ladder fragment adoption** (`90a2665`): verify.md uses `{{include:_fragments/verdict-ladder.md}}` instead of inline copy.
+- **lint-output trigger fix** (`e3d127c`): now triggers on `eslint.config.js` (v9 flat config), not just legacy `.eslintrc*`.
+- **README badges** (`f9931ce`): regression-test + lint-output status visible at top of README.
+- **Local commands table** in README (`9278def`): all 15+ npm scripts documented with when-to-run guidance.
+
+### Added (2026-06-04 first session — 17 commits, initial PROVEN-E2E hardening)
 - **Plan envelope hard enforcement** (`a3a6cc5` + `31a2bfa` + `1d775c3` + `c3215a4`): Stage 1 instructs Claude to emit envelope.json alongside markdown plan; Stage 2 reads envelope as authoritative contract for scenario IDs / required POMs / fixtures; `scripts/derive-envelope.ts` (365 LOC strict TS) is the safety net — derives envelope from markdown if Claude misses, ensuring envelope ALWAYS exists; regression-test gates derive→validate roundtrip across all 12 example plans
 - **Validator promotion**: `validate-examples` --warn → --strict (`a3e7f15`)
 - **Verify HARD gate** (`13d2544`): START OVER verdict exits 1 (failed check), pairs with branch protection for actual merge block
