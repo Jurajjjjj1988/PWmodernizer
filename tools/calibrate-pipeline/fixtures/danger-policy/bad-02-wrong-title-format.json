@@ -1,0 +1,20 @@
+{
+  "_comment": "Plan PR with migrator:plan label but a title that does not start with `[Migration plan]`. Body still has the Stage 1 header so rule #3 stays quiet — only rule #1 (title-format) trips.",
+  "pr": {
+    "title": "Plan for foo",
+    "body": "## Stage 1 — Migration plan\n\nDraft plan for foo.spec.ts."
+  },
+  "labels": ["migrator:plan"],
+  "commits": [
+    {
+      "sha": "5555555mmmmmnnnnnooooo",
+      "message": "plan: outputs/plans/foo.spec.ts.md\n\nClean trailer."
+    }
+  ],
+  "createdFiles": ["outputs/plans/foo.spec.ts.md"],
+  "modifiedFiles": [],
+  "fileLineCounts": {
+    "outputs/plans/foo.spec.ts.md": 110
+  },
+  "expectedViolations": ["title-format"]
+}

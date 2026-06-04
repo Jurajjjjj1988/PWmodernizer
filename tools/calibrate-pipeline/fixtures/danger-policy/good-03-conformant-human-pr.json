@@ -1,0 +1,20 @@
+{
+  "_comment": "Human-authored PR — no migrator:* label, so rules 1, 3, 4 are inert. Free-form title and body are allowed. No tainted commits, no transient files. Should be zero violations.",
+  "pr": {
+    "title": "chore: refactor docs",
+    "body": "Cleaning up walkthrough.md headings and fixing a stale link. No pipeline changes."
+  },
+  "labels": ["docs"],
+  "commits": [
+    {
+      "sha": "3333333ggggghhhhhiiiii",
+      "message": "chore: refactor walkthrough headings\n\nNo functional change."
+    }
+  ],
+  "createdFiles": [],
+  "modifiedFiles": ["docs/walkthrough.md"],
+  "fileLineCounts": {
+    "docs/walkthrough.md": 250
+  },
+  "expectedViolations": []
+}

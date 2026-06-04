@@ -1,0 +1,24 @@
+{
+  "_comment": "Diff includes two gitignored transient files. Rule #6 must trip once per forbidden path — two violations total, both rule transient-file-staged. Otherwise the PR is a clean human change with no migrator label, so rules 1/3/4 stay inert.",
+  "pr": {
+    "title": "chore: update outputs",
+    "body": "Re-running a migration; should not have staged the cache markers."
+  },
+  "labels": [],
+  "commits": [
+    {
+      "sha": "6666666pppppqqqqqrrrrr",
+      "message": "chore: refresh fixtures\n\nLocal cache was accidentally staged."
+    }
+  ],
+  "createdFiles": [
+    "outputs/.snippets-inventory.md",
+    "outputs/.lint-errors.md"
+  ],
+  "modifiedFiles": [],
+  "fileLineCounts": {
+    "outputs/.snippets-inventory.md": 30,
+    "outputs/.lint-errors.md": 10
+  },
+  "expectedViolations": ["transient-file-staged", "transient-file-staged"]
+}

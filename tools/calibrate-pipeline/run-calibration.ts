@@ -26,6 +26,10 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
+import {
+  checkAllSync, type PrSnapshot, type Violation,
+} from "../../scripts/lib/danger-rules.js";
+
 const REPO_ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const FIXTURES_ROOT = join(REPO_ROOT, "tools", "calibrate-pipeline", "fixtures");
 const GOLDEN_ROOT = join(REPO_ROOT, "tools", "calibrate-pipeline", "golden-outputs");
@@ -35,12 +39,14 @@ const FIXTURE_SPLIT = "<!--FIXTURE-SPLIT-->";
 type ValidatorName =
   | "kb-validate" | "plan-envelope-validate"
   | "ast-diff-trivial-check" | "validate-examples"
-  | "plan-code-coverage" | "dom-ground" | "verify-tally";
+  | "plan-code-coverage" | "dom-ground" | "verify-tally"
+  | "danger-policy";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
   "ast-diff-trivial-check", "validate-examples",
   "plan-code-coverage", "dom-ground", "verify-tally",
+  "danger-policy",
 ];
 
 interface FixtureResult {
@@ -264,6 +270,48 @@ function runVerifyTally(fixtureName: string): FixtureResult {
   return buildResult(fixtureName, r, parseGolden(goldenPath("verify-tally", fixtureName)));
 }
 
+interface DangerFixture extends PrSnapshot {
+  expectedViolations: Violation["rule"][];
+}
+
+/**
+ * danger-policy fixtures are flat JSON files describing a PrSnapshot plus
+ * an `expectedViolations` list. We invoke the pure-function rule
+ * predicates in-process (no spawn) and assert the multiset of fired rule
+ * names matches the declaration. No golden-output file — the JSON IS the
+ * spec. Per-fixture FixtureResult is synthesised to mesh with printReport.
+ */
+function runDangerPolicy(fixtureName: string): FixtureResult {
+  const fixturePath = join(FIXTURES_ROOT, "danger-policy", fixtureName);
+  const expectedExit = expectedExitFromName(fixtureName);
+  const raw = readFileSync(fixturePath, "utf8");
+  const fx = JSON.parse(raw) as DangerFixture;
+  const byLocale = (a: string, b: string): number => a.localeCompare(b);
+  const expected: string[] = [...fx.expectedViolations].map(String).sort(byLocale);
+  const actual: string[] = checkAllSync(fx).map((v) => v.rule as string).sort(byLocale);
+  // Multiset diff catches both missing AND unexpected rule firings.
+  const remaining = [...actual];
+  const missing: string[] = [];
+  for (const want of expected) {
+    const i = remaining.indexOf(want);
+    if (i === -1) missing.push(want);
+    else remaining.splice(i, 1);
+  }
+  const passed = missing.length === 0 && remaining.length === 0;
+  const missingMsgs = [
+    ...missing.map((r) => `missing rule '${r}'`),
+    ...remaining.map((r) => `unexpected rule '${r}'`),
+  ];
+  const invertedExit = expectedExit === 0 ? 1 : 0;
+  return {
+    fixture: fixtureName,
+    expectedExit,
+    actualExit: passed ? expectedExit : invertedExit,
+    missingSubstrings: missingMsgs,
+    passed,
+  };
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
@@ -272,6 +320,7 @@ const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = 
   "plan-code-coverage": runPlanCodeCoverage,
   "dom-ground": runDomGround,
   "verify-tally": runVerifyTally,
+  "danger-policy": runDangerPolicy,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

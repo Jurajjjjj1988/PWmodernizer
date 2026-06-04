@@ -28,6 +28,7 @@
     "ast-diff:sweep": "tsx scripts/ast-diff-threshold-sweep.ts",
     "check:dom-ground": "tsx scripts/dom-ground.ts --url mock://always-resolve --probe examples/bad-playwright-01-flaky-waits/expected-output.spec.ts --report /tmp/dom-probe-smoke.json",
     "check:dom-ground:live": "tsx scripts/dom-ground-live-calibrate.ts",
+    "check:danger": "tsx scripts/danger-calibrate.ts",
     "lint": "eslint 'outputs/tests/**/*.ts'",
     "lint:fix": "eslint --fix 'outputs/tests/**/*.ts'",
     "typecheck": "tsc --noEmit -p outputs/tests/tsconfig.json",

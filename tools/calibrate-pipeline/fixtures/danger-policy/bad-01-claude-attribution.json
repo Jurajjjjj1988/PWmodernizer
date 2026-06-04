@@ -1,0 +1,20 @@
+{
+  "_comment": "Tainted commit trailer — the regex /Co-Authored-By:.*([Cc]laude|[Aa]nthropic)/ must match. Otherwise conformant (title, body, labels are all fine) so only rule #2 trips. Single failure mode per the calibration discipline.",
+  "pr": {
+    "title": "chore: tidy fixtures",
+    "body": "Misc cleanup, no policy-relevant changes."
+  },
+  "labels": ["chore"],
+  "commits": [
+    {
+      "sha": "4444444jjjjjkkkkklllll",
+      "message": "chore: tidy fixtures\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+    }
+  ],
+  "createdFiles": [],
+  "modifiedFiles": ["docs/troubleshooting.md"],
+  "fileLineCounts": {
+    "docs/troubleshooting.md": 80
+  },
+  "expectedViolations": ["no-claude-attribution"]
+}

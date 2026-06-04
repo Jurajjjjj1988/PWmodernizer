@@ -1,0 +1,21 @@
+{
+  "_comment": "Conformant code PR — correct title prefix, migrator:code + confidence:high, body has the Stage 2 header that dangerfile.ts checks verbatim. Confirms rules 1, 3, 4 all pass when CANDOR has labeled the PR.",
+  "pr": {
+    "title": "[Migration code] inputs/foo.spec.ts",
+    "body": "## Stage 2 — Generated migration\n\nDerived from the approved Stage 1 plan; validators green; CANDOR confidence high."
+  },
+  "labels": ["migrator:code", "confidence:high"],
+  "commits": [
+    {
+      "sha": "2222222dddddeeeeefffff",
+      "message": "code: outputs/tests/foo.spec.ts\n\nGenerated migration with POM extraction."
+    }
+  ],
+  "createdFiles": ["outputs/tests/foo.spec.ts", "outputs/tests/pages/foo.page.ts"],
+  "modifiedFiles": [],
+  "fileLineCounts": {
+    "outputs/tests/foo.spec.ts": 95,
+    "outputs/tests/pages/foo.page.ts": 60
+  },
+  "expectedViolations": []
+}
