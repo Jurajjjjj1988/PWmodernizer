@@ -318,6 +318,14 @@ jobs:
           DO NOT write outside outputs/tests/. The tsconfig rootDir is outputs/ — files outside that fail typecheck.
           DO NOT modify inputs/, config/, or prompts/.
 
+          ## Runtime config the generated spec runs against
+
+          A playwright config already exists at outputs/tests/playwright.config.ts. Key points:
+          - baseURL is read from MIGRATION_TARGET_URL env var (defaults to http://localhost:3000). Always use relative paths: page.goto("/login") NOT page.goto("https://...").
+          - actionTimeout: 5_000. If a plan Risk callout calls out longer backend latency (e.g. 7s rate-limit cooldown), emit a per-assertion timeout override ({ timeout: 10_000 }) with a WHY-comment citing the plan question — never bump the global timeout.
+          - 3 projects: chromium, firefox, webkit. Generate browser-agnostic specs (no browser-specific shortcuts).
+          - retain-on-failure for trace + screenshot + video — don't add explicit page.screenshot() unless the plan asked for it.
+
           ## Hard rules
 
           - Web-first assertions only
