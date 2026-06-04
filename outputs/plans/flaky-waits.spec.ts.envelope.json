@@ -1,0 +1,56 @@
+{
+  "inputBasename": "flaky-waits.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "primary scenario (derived placeholder)",
+      "userAction": "Derived from markdown without an assertion checklist; reviewer must enrich.",
+      "expectedAssertions": [
+        "TODO: populate from source test"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "`page.locator('#email')`",
+      "target": "`page.getByLabel(/email/i)`",
+      "confidence": "med",
+      "notes": "Id `email` strongly suggests an email input, and the form convention implies a `<label>` for `email`, but no DOM snapshot confirms the label text. Preserve `page.locator('#email')` as fallback if label is absent — see Q2."
+    },
+    {
+      "original": "`page.locator('#password')`",
+      "target": "`page.getByLabel(/password/i)`",
+      "confidence": "med",
+      "notes": "Same rationale as `#email`. Standard login forms universally label the password field; no DOM snapshot to confirm — see Q2."
+    },
+    {
+      "original": "`page.getByText('Sign in')`",
+      "target": "`page.getByRole('button', { name: /sign in/i })`",
+      "confidence": "med",
+      "notes": "The element is used with `.click()` in a form-submission context, making a `<button>` or `<input type=\"submit\">` likely. However `getByText` matches any element — could be a styled `<a>` or `<div>`. **Review needed: confirm element tag before upgrading to `getByRole`.** Fallback: `page.getByText('Sign in', { exact: true })` (HIGH confidence, keeps current semantics) — see Q5."
+    },
+    {
+      "original": "`page.locator('.dashboard-greeting')`",
+      "target": "`page.locator('.dashboard-greeting')`",
+      "confidence": "low",
+      "notes": "CSS class only; no DOM evidence of role, `aria-label`, or `data-testid`. Cannot propose `getByRole` or `getByText` without knowing the element tag and runtime text. Reviewer should add a `data-testid=\"dashboard-greeting\"` to the component or confirm a heading role — see Q3."
+    },
+    {
+      "original": "`page.locator('.error-banner')`",
+      "target": "`page.getByRole('alert')`",
+      "confidence": "med",
+      "notes": "Error notifications frequently carry `role=\"alert\"` in accessible implementations; `.error-banner` class name reinforces this guess. If the element lacks a role, fallback is `page.locator('.error-banner')` (LOW). If `.error-banner` matches multiple elements on the page, scope with `.filter({ hasText: /invalid credentials/i })` — see Q4."
+    }
+  ],
+  "hallucinationDefensePins": [],
+  "expectedMetrics": {
+    "selectorQualityScore": 0,
+    "smellCountDelta": 0,
+    "locDelta": 0,
+    "antiPatternCoverage": "0/0"
+  }
+}
