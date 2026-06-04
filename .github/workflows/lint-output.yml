@@ -16,12 +16,14 @@ on:
   pull_request:
     paths:
       - 'outputs/tests/**'
-      - '.eslintrc*'
+      - '.eslintrc*'    # legacy — kept for safety
+      - 'eslint.config.js'  # v9 flat config (actual config in use)
       - 'package.json'
   push:
     branches: [main]
     paths:
       - 'outputs/tests/**'
+      - 'eslint.config.js'
 
 permissions:
   contents: read
