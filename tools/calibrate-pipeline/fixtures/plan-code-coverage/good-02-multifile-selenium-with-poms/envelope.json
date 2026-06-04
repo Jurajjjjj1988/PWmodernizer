@@ -1,0 +1,52 @@
+{
+  "inputBasename": "input",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "signs in with valid credentials and lands on dashboard",
+      "userAction": "Fill credentials in LoginPage and click Sign in.",
+      "expectedAssertions": [
+        "URL contains /dashboard after sign-in"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "rejects invalid credentials with error banner",
+      "userAction": "Submit bad password and observe error banner.",
+      "expectedAssertions": [
+        "error banner text equals 'Invalid credentials'"
+      ]
+    }
+  ],
+  "requiredPOMs": [
+    "outputs/tests/pages/login.page.ts"
+  ],
+  "requiredFixtures": [
+    "outputs/tests/fixtures/auth.fixture.ts"
+  ],
+  "locatorTable": [
+    {
+      "original": "@FindBy(id = \"email\") WebElement emailInput",
+      "target": "page.getByLabel('Email')",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Email input",
+      "assumedLocator": "page.getByLabel('Email')",
+      "sourceLocator": "@FindBy(id = \"email\")",
+      "whyComment": "Q-email-label assumed from id semantics.",
+      "reviewerFallback": "Inspect rendered DOM."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.92,
+    "smellCountDelta": -7,
+    "locDelta": 15,
+    "antiPatternCoverage": "7/7"
+  }
+}

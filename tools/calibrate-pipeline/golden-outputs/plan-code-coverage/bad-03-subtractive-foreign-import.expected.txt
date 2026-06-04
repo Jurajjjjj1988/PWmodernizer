@@ -1,0 +1,4 @@
+# Exit 1. Subtractive plan + code imports selenium-webdriver — foreign framework import disallowed.
+subtractive migration introduced foreign framework import
+selenium-webdriver
+contract violation(s)

@@ -1,0 +1,40 @@
+{
+  "inputBasename": "input.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "submits the form @positive",
+      "userAction": "Click Submit and observe success.",
+      "expectedAssertions": [
+        "success banner is visible"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('button.primary')",
+      "target": "page.getByRole('button', { name: 'Submit' })",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Submit button",
+      "assumedLocator": "page.getByRole('button', { name: 'Submit' })",
+      "sourceLocator": "page.locator('button.primary')",
+      "whyComment": "Q-submit assumed accessible name.",
+      "reviewerFallback": "Confirm button label."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -2,
+    "locDelta": -3,
+    "antiPatternCoverage": "2/2"
+  }
+}

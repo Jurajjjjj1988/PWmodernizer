@@ -1,0 +1,4 @@
+# Exit 1. Envelope declares scenario 1.2 but code has no `// plan:scenario=1.2` pin.
+missing scenario pin
+1.2
+contract violation(s)

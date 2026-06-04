@@ -1,0 +1,5 @@
+# Exit 0. Subtractive with @playwright/test, node:fs, and a relative import — all allowed.
+plan-code-coverage:
+1 scenario(s) pinned
+subtractive=true
+clean

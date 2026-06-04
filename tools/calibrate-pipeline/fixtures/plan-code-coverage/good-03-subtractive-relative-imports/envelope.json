@@ -1,0 +1,41 @@
+{
+  "inputBasename": "checkout.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "completes checkout with saved card @positive",
+      "userAction": "Use stored payment method and complete order.",
+      "expectedAssertions": [
+        "order confirmation heading is visible",
+        "order number matches /^ORD-/"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('.pay-now')",
+      "target": "page.getByRole('button', { name: 'Pay now' })",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Pay now button",
+      "assumedLocator": "page.getByRole('button', { name: 'Pay now' })",
+      "sourceLocator": "page.locator('.pay-now')",
+      "whyComment": "Q-pay-now button label assumed.",
+      "reviewerFallback": "Confirm in DOM."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -4,
+    "locDelta": -5,
+    "antiPatternCoverage": "4/4"
+  }
+}

@@ -1,0 +1,5 @@
+# Exit 0. Non-subtractive Selenium → PW, both scenarios pinned, POM + fixture exist.
+plan-code-coverage:
+2 scenario(s) pinned
+1 POM(s) + 1 fixture(s) present
+clean

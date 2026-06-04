@@ -1,0 +1,48 @@
+{
+  "inputBasename": "input.spec.ts",
+  "sourceFramework": "bad-playwright",
+  "subtractive": true,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "signs in with valid credentials @positive",
+      "userAction": "Submit valid login form.",
+      "expectedAssertions": [
+        "URL after submit matches /dashboard"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "shows error on bad password @negative",
+      "userAction": "Submit wrong password.",
+      "expectedAssertions": [
+        "error banner visible with 'Invalid credentials'"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "page.locator('#email')",
+      "target": "page.getByLabel(/email/i)",
+      "confidence": "high"
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Email input",
+      "assumedLocator": "page.getByLabel(/email/i)",
+      "sourceLocator": "page.locator('#email')",
+      "whyComment": "Q-email-label assumed.",
+      "reviewerFallback": "Confirm via DOM."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.9,
+    "smellCountDelta": -2,
+    "locDelta": -3,
+    "antiPatternCoverage": "2/2"
+  }
+}

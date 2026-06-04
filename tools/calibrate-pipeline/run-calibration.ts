@@ -34,11 +34,13 @@ const FIXTURE_SPLIT = "<!--FIXTURE-SPLIT-->";
 
 type ValidatorName =
   | "kb-validate" | "plan-envelope-validate"
-  | "ast-diff-trivial-check" | "validate-examples";
+  | "ast-diff-trivial-check" | "validate-examples"
+  | "plan-code-coverage";
 
 const VALIDATORS: readonly ValidatorName[] = [
   "kb-validate", "plan-envelope-validate",
   "ast-diff-trivial-check", "validate-examples",
+  "plan-code-coverage",
 ];
 
 interface FixtureResult {
@@ -193,11 +195,30 @@ function runValidateExamples(fixtureName: string): FixtureResult {
   });
 }
 
+function runPlanCodeCoverage(fixtureName: string): FixtureResult {
+  // plan-code-coverage closes the LPW loop end-to-end: each fixture pairs an
+  // envelope.json with a code.ts. For multi-file fixtures (e.g. good-02 which
+  // references outputs/tests/pages/login.page.ts), the fixture dir itself
+  // doubles as a sandbox repo root so requiredPOMs/Fixtures existence checks
+  // resolve locally. The flag is a no-op for fixtures with empty arrays.
+  const fixtureDir = join(FIXTURES_ROOT, "plan-code-coverage", fixtureName);
+  const envelope = join(fixtureDir, "envelope.json");
+  const code = join(fixtureDir, "code.ts");
+  const r = spawnSync("npx", [
+    "tsx", join(SCRIPTS_DIR, "plan-code-coverage.ts"),
+    "--envelope", envelope,
+    "--output", code,
+    "--repo-root", fixtureDir,
+  ], { cwd: REPO_ROOT, encoding: "utf8" });
+  return buildResult(fixtureName, r, parseGolden(goldenPath("plan-code-coverage", fixtureName)));
+}
+
 const FIXTURE_RUNNERS: Record<ValidatorName, (name: string) => FixtureResult> = {
   "kb-validate": runKb,
   "plan-envelope-validate": runEnvelope,
   "ast-diff-trivial-check": runAstDiff,
   "validate-examples": runValidateExamples,
+  "plan-code-coverage": runPlanCodeCoverage,
 };
 
 function runValidator(validator: ValidatorName): ValidatorReport {

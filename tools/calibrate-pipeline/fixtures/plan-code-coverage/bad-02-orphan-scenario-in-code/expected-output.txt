@@ -1,0 +1,5 @@
+# Exit 1. Code declares scenario 9.9 that envelope doesn't list — orphan pin.
+orphan scenario pin
+9.9
+envelope.scenarios has no id
+contract violation(s)

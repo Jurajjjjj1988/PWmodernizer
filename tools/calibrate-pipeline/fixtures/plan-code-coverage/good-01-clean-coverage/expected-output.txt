@@ -1,0 +1,4 @@
+# Exit 0. Two scenarios, each pinned exactly once; subtractive with no foreign imports.
+plan-code-coverage:
+2 scenario(s) pinned
+clean
