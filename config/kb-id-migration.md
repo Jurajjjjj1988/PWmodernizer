@@ -144,6 +144,9 @@ Java + Python collapse into one `sel/` framework — the anti-patterns are seman
 | KB-1.3.11 | `sel/wait/implicit-wait`        | deprecated, alias for `sel/wait/implicit-wait` |
 | KB-1.3.12 | `sel/fixture/manual-teardown`   | deprecated, alias for `sel/fixture/manual-teardown` |
 | KB-1.3.13 | `sel/action/js-executor-click`  | deprecated, alias for `sel/action/js-executor-click` |
+| KB-1.3.14 | `sel/fixture/page-factory-eager-init` | deprecated, alias for `sel/fixture/page-factory-eager-init` (added 2026-06-04 — PageFactory `@FindBy` + `initElements` couples lifecycle to eager-init + stale-element risk) |
+| KB-1.3.15 | `sel/wait/expected-conditions-ceremony` | deprecated, alias for `sel/wait/expected-conditions-ceremony` (added 2026-06-04 — `ExpectedConditions.visibilityOf(...)` boilerplate per wait) |
+| KB-1.3.16 | `sel/fixture/thread-local-driver` | deprecated, alias for `sel/fixture/thread-local-driver` (added 2026-06-04 — `ThreadLocal<WebDriver>` parallel-runner accommodation, manual lifecycle) |
 | KB-1.3.17 | `sel/frame/index-switch` | deprecated, alias for `sel/frame/index-switch` (added 2026-06-04 — `frame(0)` index-based race) |
 | KB-1.3.18 | `sel/alert/race-unprotected` | deprecated, alias for `sel/alert/race-unprotected` (added 2026-06-04 — `switchTo().alert()` without registered handler) |
 | KB-1.3.19 | `sel/selector/link-text-exact` | deprecated, alias for `sel/selector/link-text-exact` (added 2026-06-04 — `By.linkText` brittle on copy drift) |
@@ -172,6 +175,10 @@ Most map onto the same `sel/` IDs as §1.3 (cross-language equivalents). Python-
 | KB-1.4.11 | `sel/magic/timeout-constants`   | deprecated, alias for `sel/magic/timeout-constants` | partial dup of `sel/wait/implicit-wait` (KB-1.3.11) — keep separate; this is the "shared module constant" smell, not the implicit-wait smell |
 | KB-1.4.12 | `sel/magic/hardcoded-url`       | deprecated, alias for `sel/magic/hardcoded-url` | Python-only example, but the smell is language-agnostic — Java code that hardcodes `driver.get("https://...")` falls under the same ID once KB grows |
 | KB-1.4.13 | `sel/assertion/text-equality`   | deprecated, alias for `sel/assertion/text-equality` | Python-only (`el.text == "..."`) |
+| KB-1.4.14 | `sel/fixture/class-scope-driver` | deprecated, alias for `sel/fixture/class-scope-driver` | Python-only (`setup_class`/`teardown_class` shares one driver across methods — coupling siblings) |
+| KB-1.4.15 | `sel/action/body-send-keys` | deprecated, alias for `sel/action/body-send-keys` | Python-only (`body.send_keys(Keys.ESCAPE)` keyboard escape hatch — couples to focus state) |
+| KB-1.4.16 | `sel/wait/implicit-wait` | deprecated, alias for `sel/wait/implicit-wait` | merges with KB-1.3.11 (`driver.implicitly_wait(N)` global timeout, Python binding) |
+| KB-1.4.17 | `sel/selector/find-elements-snapshot` | deprecated, alias for `sel/selector/find-elements-snapshot` | merges with KB-1.3.7 (`find_elements(...)[i]` Python-binding snapshot-list indexing) |
 | KB-1.4.18 | `sel/assertion/js-runtime-probe` | deprecated, alias for `sel/assertion/js-runtime-probe` (added 2026-06-04 — `execute_script("return ...")` bypasses visible state) |
 | KB-1.4.19 | `sel/fixture/session-scope-driver` | deprecated, alias for `sel/fixture/session-scope-driver` (added 2026-06-04 — pytest `scope="session"` driver fixture) |
 | KB-1.4.20 | `sel/fixture/webdriver-manager-network` | deprecated, alias for `sel/fixture/webdriver-manager-network` (added 2026-06-04 — `webdriver-manager` installer network flake) |

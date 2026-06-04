@@ -11,9 +11,9 @@ PWmodernizer is an LLM-driven 3-stage pipeline that migrates legacy E2E tests (b
 - `inputs/` — source tests by framework (`bad-playwright/`, `cypress/`, `selenium-java/`, `selenium-python/`, `_stress/`)
 - `outputs/` — pipeline deliverables (`plans/`, `tests/`, `reports/`)
 - `prompts/` — Stage 1/2/verify system prompts + `_fragments/` + `_assembled/`
-- `config/` — `knowledge-base.md` (115 KB IDs), `migration-rules.md`, `kb-id-migration.md`
-- `scripts/` — 25 TS scripts exposed via npm-run targets (validators, evaluators, replay, calibration)
-- `tools/calibrate-pipeline/` — 52-fixture corpus + golden outputs
+- `config/` — `knowledge-base.md` (125 KB IDs across pw 25 / cy 50 / sel-java 24 / sel-py 26), `migration-rules.md`, `kb-id-migration.md`
+- `scripts/` — 26 TS scripts exposed via npm-run targets (validators, evaluators, replay, calibration, trajectory tracer)
+- `tools/calibrate-pipeline/` — 46-fixture corpus across 7 validators + golden outputs; opt-in `dom-ground-live` adds 6 against public SUTs
 - `.github/workflows/` — 8 workflows: `plan.yml`, `migrate.yml`, `verify.yml`, `danger.yml`, `regression-test.yml`, `regression-semantic.yml`, `regenerate-dispatch.yml`, `lint-output.yml`
 - `docs/` — `walkthrough.md`, `troubleshooting.md`, `baselines.md`, `dom-ground-public-suts.md`, `beyond-v1-research.md`, `playwright-mcp-integration.md`
 
@@ -45,7 +45,7 @@ inputs/<framework>/foo.spec.ts
 
 ```bash
 npm run smoke                  # typecheck:all + validate:all + lint — before any commit
-npm run calibrate              # local 52-fixture run through Stage 1 + Stage 2
+npm run calibrate              # local 46-fixture run across 7 validators
 npm run validate:all           # full validator chain
 npm run check:dom-ground:live  # DOM grounding live calibration
 gh workflow run plan.yml       # trigger Stage 1 on current branch

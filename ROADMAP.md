@@ -21,19 +21,20 @@
 
 ### Validators (all clean, calibrated 3+3 each)
 
-- ✅ `scripts/kb-validate.ts` — 68 KB IDs, 29 references resolved
-- ✅ `scripts/validate-examples.ts` — 12 plans, 0 findings (warn mode per Sakasegawa)
-- ✅ `scripts/plan-envelope-validate.ts` — canonical example clean
-- ✅ `scripts/ast-diff-trivial-check.ts` — ts-morph + Zhang-Shasha
-- ✅ `scripts/assemble-prompts.ts` — 3 prompts, all includes resolve
-- ✅ `tools/calibrate-pipeline/` — 24/24 fixtures (3 good + 3 bad × 4 validators)
+- ✅ `scripts/kb-validate.ts` — 125 KB IDs, 55 references resolved
+- ✅ `scripts/validate-examples.ts` — 16 example plans, 0 findings (strict mode post-calibration)
+- ✅ `scripts/plan-envelope-validate.ts` — canonical example clean + `--code` mode for pin verification
+- ✅ `scripts/ast-diff-trivial-check.ts` — ts-morph + Zhang-Shasha (TS) + tree-sitter (Java + Python)
+- ✅ `scripts/assemble-prompts.ts` — 5 prompts, all includes resolve, stale-detection in `--check`
+- ✅ `tools/calibrate-pipeline/` — 46/46 fixtures across 7 validators (kb 6 + envelope 6 + ast-diff 10 + examples 6 + coverage 6 + dom-ground 6 + verify-tally 6); +6 dom-ground-live opt-in
 
 ### Corpus
 
-- 5 bad-Playwright examples (flaky-waits, nth-selectors, silent-conditionals, missing-await, force-clicks)
-- 5 Selenium examples (4 java + 4 python single-file; 1 java multi-file)
-- 1 Cypress example pair (deprioritized; deferred to post-Selenium phase)
+- 5 bad-Playwright examples (flaky-waits, nth-selectors, silent-conditionals, missing-await, force-clicks) + 5 inputs/bad-playwright/
+- 6 Selenium examples (3 java single+multi-file + 3 python single+multi-file)
+- 5 Cypress examples (login, form-validation, intercept-stubbing, session-auth, conditional-and-jquery)
 - 1 reference style anchor (Investown referral suite distilled)
+- First real `inputs/cypress/checkout-flow.cy.js` (commit `98b9368`) + first real `inputs/selenium-java/EmployeesTest.java` plan landed via PR #3 (commit `2a6ccc7`)
 
 ---
 
@@ -56,8 +57,8 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 ### First real Selenium E2E
 
 - [x] `inputs/selenium-java/` corpus prepared (`EmployeesTest.java` 40 LOC + `pages/EmployeesPage.java` 66 LOC + `helpers/DriverFactory.java` 34 LOC = 140 LOC across 3 files). Ready for Stage 1 → Stage 2.
-- [ ] Trigger first multi-file Stage 1 → Stage 2 pipeline run (Claude session quota currently blocking; resumes 22:50 UTC)
-- [ ] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline (post-run)
+- [x] Trigger first multi-file Stage 1 → Stage 2 pipeline run — **Stage 1 SHIPPED** as PR #3 (commit `2a6ccc7` auto-merged the plan envelope + markdown for `EmployeesTest.java`); Stage 2 trigger fired on merge. First real cross-file Selenium plan landed.
+- [ ] Compare Sonnet output against `examples/selenium-java-03-multifile-login/expected-output/` as quality baseline (post-Stage-2-merge)
 - [x] Tune ts-morph fallback — tree-sitter-java + tree-sitter-python landed in Batch 1 (commit `666332a`); calibration 6/6 → 10/10. `.java` and `.py` get native Zhang-Shasha now.
 
 ### Semantic regression workflow
@@ -90,12 +91,12 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 - [x] Phase 1-3 of brief — `scripts/dom-ground.ts` contract surface (CLI, report shape, exit codes), ts-morph locator parser (8 method families), mock probe driver with `mock://always-resolve|always-fail|ambiguous-N` URLs for fixture-free testing. `npm run check:dom-ground` smoke.
 - [x] Phase 4 — live probe driver via `chromium.launch` (direct Playwright; MCP layer not needed for server-side CI gate)
 - [x] Phase 5 — wire dom-ground into migrate.yml as opt-in step (soft gate, persists `outputs/reports/*-dom-probe.json` for verify)
-- [ ] Phase 6 — `@playwright/mcp` Stage 1 enrichment: Sonnet receives a DOM snapshot during plan generation, locator table annotates each row with DOM evidence
+- [~] Phase 6 — `@playwright/mcp` Stage 1 enrichment: **stub shipped** as `scripts/dom-snapshot.ts` (commit `f2bdd95` — accessibility tree capture via `@playwright/mcp`); real LLM-side ingestion in analyze.md prompt + locator-table annotation pending
 - [x] Phase 7a — calibration fixtures (3 good + 3 bad mock URLs in `tools/calibrate-pipeline/fixtures/dom-ground/`; integrated into `npm run calibrate`, currently 6/6 passing). Mock-mode proves gate logic without needing a real SUT.
 - [x] Phase 7b — hard-gate flag: `DOM_GROUND_STRICT=true` repo var promotes the migrate.yml step from soft (warn) to hard (fail). Default soft until SUT calibration in place.
-- [x] Phase 7c scaffolding — 6 live calibration fixtures (3 good + 3 bad) in `tools/calibrate-pipeline/fixtures/dom-ground-live/` targeting saucedemo.com, conduit.bondaracademy.com, practicetestautomation.com, demoqa.com; runner `scripts/dom-ground-live-calibrate.ts` + `npm run check:dom-ground:live`. Catalog at [`docs/dom-ground-public-suts.md`](docs/dom-ground-public-suts.md). Final flip of `DOM_GROUND_STRICT` waits for first green run against all 6 fixtures.
-- [ ] HIGH-confidence locators (currently mechanical mapping only) get an additional check against the DOM before emission
-- [ ] LOW-confidence pin rules become enforced: if DOM evidence contradicts the assumed locator, the fallback is taken AND the WHY-comment is materialized in the output
+- [x] Phase 7c — 6 live calibration fixtures (3 good + 3 bad) in `tools/calibrate-pipeline/fixtures/dom-ground-live/` targeting saucedemo.com, conduit.bondaracademy.com, practicetestautomation.com; runner `scripts/dom-ground-live-calibrate.ts` + `npm run check:dom-ground:live`. Catalog at [`docs/dom-ground-public-suts.md`](docs/dom-ground-public-suts.md). **6/6 GREEN** (commit `7d4746d` — bad-02 reslotted from demoqa-ambiguous-checkbox → saucedemo-ambiguous-textbox after demoqa proved unstable). `DOM_GROUND_STRICT=true` set as repo var.
+- [~] HIGH-confidence locators get an additional DOM check before emission — scaffolded via dom-ground step in migrate.yml (mock + live both wired); full HIGH-strict integration pending
+- [~] LOW-confidence pin rules — scaffolded: DOM-probe report annotates LOW pins; auto-fallback + WHY-comment materialization pending
 
 ### Plan envelope enforcement
 
@@ -117,8 +118,8 @@ Per Sakasegawa 2026: uncalibrated validators should run in warn mode. Calibratio
 ### Phase 3 — Cypress (deprioritized but documented)
 
 - [x] `examples/cypress-*/` corpus expansion: 5 examples (commit `3b6faf6` added cypress-03/04/05 — intercept-stubbing, session-auth, conditional-and-jquery). Further expansion parked.
-- [ ] `inputs/cypress/` first real input — gated on user submission
-- [x] `cy/...` KB-ID namespace expansion: 50 Cypress entries total (commits `e30bcc8` 14→20 + `0f2643a` 20→50). kb-validate: 98 IDs total. Parity with bad-PW reached.
+- [x] `inputs/cypress/` first real input — `checkout-flow.cy.js` 55 LOC synthesized real-world e-commerce flow landed in commit `98b9368`. Ready for plan.yml trigger.
+- [x] `cy/...` KB-ID namespace expansion: 50 Cypress entries total (commits `e30bcc8` 14→20 + `0f2643a` 20→50). kb-validate: 125 IDs total at parity (pw 25 / cy 50 / sel-java 24 / sel-py 26).
 
 ---
 

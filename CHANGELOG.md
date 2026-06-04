@@ -6,6 +6,21 @@ Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
 ## [Unreleased / v0.4 development]
 
+### Added (2026-06-04 — Wave 10 closure: 8 commits hardening the previous waves)
+
+**Wave 10 narrative:** Wave 9 shipped 6 live DOM fixtures + the danger policy scaffold and ROADMAP marked Phase 7c as "scaffolded, awaiting first green run". Wave 10 closes the loop end-to-end — the live calibration goes 6/6 GREEN, the first real Cypress input lands, the first real cross-file Selenium plan lands as PR #3, the Phase 6 `@playwright/mcp` stub ships, and the orientation surface (CLAUDE.md + AGENTS.md) is materialized at root.
+
+- **Trajectory tracer** (commit `06251dc`): `scripts/trajectory-trace.ts` (463 LOC) walks an input file through plan + envelope + code + verify reports and emits a single JSON tracing the per-stage decisions; `scripts/trajectory-show.ts` (223 LOC) is the pretty-print renderer. `npm run trajectory:trace` + `npm run trajectory:show` expose them. Closes the "what did the pipeline actually decide on file X" debugging gap.
+- **CLAUDE.md + AGENTS.md root orientation** (commit `12f290a`): per-tool landing pads — Claude Code reads `CLAUDE.md`, every other agentic tool (Cursor, Codex, Aider, Continue, Cody) reads `AGENTS.md`. Same content, tool-flavored phrasing. Cuts onboarding context from "read 8 docs" to "read 1".
+- **Package-lock regen** (commit `ae41f7c`): `package-lock.json` regenerated after Wave 9 added `danger@^13.0.7` (PR #4) + Wave 10 added `@playwright/mcp@^0.0.75` (commit `f2bdd95` below). Restores CI install reproducibility.
+- **Cypress first real input** (commit `98b9368`): `inputs/cypress/checkout-flow.cy.js` (55 LOC) — synthesized real-world e-commerce checkout flow exercising cy.intercept + cy.session + cy.contains + chained .get(). Closes ROADMAP v1.0 "inputs/cypress/ first real input" line item. Ready for plan.yml trigger.
+- **Stage 2 selenium-java plan-merge auto-commit** (commit `2a6ccc7`): Stage 1 successfully analyzed `inputs/selenium-java/EmployeesTest.java` end-to-end (3 files, 140 LOC across `EmployeesTest.java` + `pages/EmployeesPage.java` + `helpers/DriverFactory.java`); plan markdown + envelope landed as PR #3 (`outputs/plans/EmployeesTest.java.md` 260 LOC + `.envelope.json` 129 LOC). **First real multi-file cross-language Selenium plan in production.** Stage 2 trigger fired on merge.
+- **Phase 7c live calibration 6/6 GREEN** (commit `7d4746d`): `bad-02-demoqa-ambiguous-checkbox` reslotted to `bad-02-saucedemo-ambiguous-textbox` (demoqa proved unstable). regression-test.yml contract-check step relaxed to accept multi-file inputs (the `find` regex was single-file only). With both fixes, `npm run check:dom-ground:live` is 6/6 across `saucedemo.com` + `conduit.bondaracademy.com` + `practicetestautomation.com`. `DOM_GROUND_STRICT=true` flipped as repo var. Closes ROADMAP v1.0 DOM-grounding "Phase 7c hard-gate" item.
+- **Phase 6 stub** (commit `f2bdd95`): `scripts/dom-snapshot.ts` (126 LOC) — wraps `@playwright/mcp` to capture an accessibility-tree snapshot for a target URL. Designed as the Stage 1 enrichment hook so Sonnet can receive DOM evidence during plan generation. `npm run dom:snapshot`. Real LLM-side ingestion in `analyze.md` + locator-table annotation still pending — stub unlocks the integration.
+- **Danger.js merge** (commit `9950167`): PR #4 (`feat/danger-policy` → main) lands `dangerfile.ts` (98 LOC) + `.github/workflows/danger.yml` (52 LOC). 6 PR-quality rules now run on every PR: title format, no Claude/Anthropic attribution, body schema, confidence label sanity, 1500-LOC file budget, no transient `_*.tmp` files under `outputs/`. Danger@13.0.7. Workflow count: 7 → 8.
+
+After Wave 10 the repo state is: 125 KB IDs across 4 frameworks at parity, 26 TS scripts, 46-fixture calibration corpus across 7 validators (+6 live opt-in), 8 workflows, 16 example pairs, 5 real `inputs/` files across 3 of the 4 source frameworks, first real cross-file Selenium plan shipped via PR #3.
+
 ### Added (2026-06-04 multi-agent supercycle — 145 total commits)
 
 **Wave 9 100%-push (8 commits: 3 parallel agents → 3 pain-solvers → DOM Phase 7c scaffolding):**

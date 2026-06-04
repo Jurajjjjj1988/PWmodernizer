@@ -20,12 +20,12 @@
 
 ## Where things live (cross-reference)
 
-- Knowledge base — [`../config/knowledge-base.md`](../config/knowledge-base.md) (115 KB IDs across pw/cy/sel)
+- Knowledge base — [`../config/knowledge-base.md`](../config/knowledge-base.md) (125 KB IDs across pw 25 / cy 50 / sel-java 24 / sel-py 26)
 - KB ID migration scheme — [`../config/kb-id-migration.md`](../config/kb-id-migration.md) (old `KB-N.N.N` → new `<fw>/<topic>/<name>`)
 - Prompts — [`../prompts/`](../prompts/) (sources) + [`../prompts/_fragments/`](../prompts/_fragments/) (shared blocks) + [`../prompts/_assembled/`](../prompts/_assembled/) (CI consumed)
-- Validators — [`../scripts/`](../scripts/) (16 entries)
-- Calibration fixtures — [`../tools/calibrate-pipeline/fixtures/`](../tools/calibrate-pipeline/fixtures/) (46 fixtures across 6 validators)
-- Workflows — [`../.github/workflows/`](../.github/workflows/) (7 workflows: plan, migrate, verify, lint-output, regression-test, regression-semantic, regenerate-dispatch)
+- Validators + helpers — [`../scripts/`](../scripts/) (26 TS entries)
+- Calibration fixtures — [`../tools/calibrate-pipeline/fixtures/`](../tools/calibrate-pipeline/fixtures/) (46 fixtures across 7 validators in the default chain; +6 dom-ground-live opt-in)
+- Workflows — [`../.github/workflows/`](../.github/workflows/) (8 workflows: plan, migrate, verify, danger, lint-output, regression-test, regression-semantic, regenerate-dispatch)
 
 ## Contribution conventions for docs
 

@@ -11,9 +11,9 @@ PWmodernizer is an LLM-driven 3-stage pipeline that migrates legacy E2E tests (b
 - `inputs/` — source tests by framework (`bad-playwright/`, `cypress/`, `selenium-java/`, `selenium-python/`, `_stress/`)
 - `outputs/` — pipeline deliverables (`plans/` markdown, `tests/` generated `.spec.ts` + POMs/fixtures, `reports/` metrics)
 - `prompts/` — Stage 1 (`analyze.md`), Stage 2 (`generate.md`), verify (`verify.md` / `verify-code-review.md` / `verify-sdet.md`), plus `_fragments/` + `_assembled/`
-- `config/` — `knowledge-base.md` (115 KB IDs), `migration-rules.md`, `kb-id-migration.md` (kebab-case conventions)
-- `scripts/` — 25 TS scripts (validators, evaluators, replay, calibration helpers, dashboards) exposed via npm-run targets
-- `tools/calibrate-pipeline/` — 52-fixture corpus with golden outputs + `run-calibration.ts`
+- `config/` — `knowledge-base.md` (125 KB IDs across pw 25 / cy 50 / sel-java 24 / sel-py 26), `migration-rules.md`, `kb-id-migration.md` (kebab-case conventions)
+- `scripts/` — 26 TS scripts (validators, evaluators, replay, calibration helpers, dashboards, trajectory tracer) exposed via npm-run targets
+- `tools/calibrate-pipeline/` — 46-fixture corpus across 7 validators (kb 6 + envelope 6 + ast-diff 10 + examples 6 + coverage 6 + dom-ground 6 + verify-tally 6) + `run-calibration.ts`; opt-in `dom-ground-live` adds 6 more against public SUTs
 - `.github/workflows/` — 8 workflows: `plan.yml`, `migrate.yml`, `verify.yml`, `danger.yml`, `regression-test.yml`, `regression-semantic.yml`, `regenerate-dispatch.yml`, `lint-output.yml`
 - `docs/` — `walkthrough.md`, `troubleshooting.md`, `baselines.md`, `dom-ground-public-suts.md`, `beyond-v1-research.md`, `playwright-mcp-integration.md`
 - `examples/` — paired `expected-plan.md` + `expected-output.spec.ts` per scenario (used by validators)
@@ -48,8 +48,8 @@ Key gates: PR-based human approval after Stage 1, validator wall after Stage 2, 
 
 ```bash
 npm run smoke                  # typecheck:all + validate:all + lint — run before any commit
-npm run calibrate              # run 52-fixture corpus through Stage 1 + Stage 2 locally
-npm run validate:all           # kb + examples + assemble + envelope (×3) + derive + coverage + calibrate
+npm run calibrate              # run 46-fixture corpus (7 validators) locally
+npm run validate:all           # kb + examples + assemble + envelope (×2) + derive + coverage + calibrate
 npm run check:kb               # verify all KB IDs referenced in prompts/examples resolve
 npm run check:examples         # strict mode — examples must be plan/output coherent
 npm run check:derive           # round-trip plan markdown → envelope → re-validate (12/12)
