@@ -20,10 +20,13 @@ on:
       - 'prompts/**'
       - 'config/**'
       - 'scripts/**'
+      - 'tools/**'                    # calibration fixtures + run-calibration.ts
       - 'examples/**'
       - '.github/workflows/**'
       - 'tsconfig.json'
       - 'outputs/tests/tsconfig.json'
+      - 'outputs/plans/*.envelope.json' # real Stage 1 envelopes that should validate
+      - 'package.json'                # npm script changes (smoke, validate:all, etc.)
 
 permissions:
   contents: read
