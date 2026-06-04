@@ -242,20 +242,36 @@ jobs:
           done
           echo "Verdict ladder consistent across prompt and workflow."
 
-      - name: Regenerate-dispatch workflow exists + wired to slash-command-dispatch
+      - name: Regenerate-dispatch flow wired end-to-end
         shell: bash
         run: |
           set -euo pipefail
-          # Existence check for the abandon-and-regenerate flow. Catches
-          # accidental deletion or rename. Pairs with the repository_dispatch
-          # listener in plan.yml (regenerate-plan event type).
+          # End-to-end /regenerate wiring check:
+          #   1. regenerate-dispatch.yml exists
+          #   2. references peter-evans/slash-command-dispatch
+          #   3. emits event-type "regenerate-plan" (suffix "-plan" + command "regenerate")
+          #   4. plan.yml listens for repository_dispatch type "regenerate-plan"
+          # Any drift between these breaks the abandon-and-regenerate flow silently
+          # (reviewer types /regenerate, nothing happens).
           FILE=".github/workflows/regenerate-dispatch.yml"
           if [ ! -f "$FILE" ]; then
             echo "::error::$FILE missing — /regenerate flow is broken."
             exit 1
           fi
           if ! grep -qF 'peter-evans/slash-command-dispatch' "$FILE"; then
-            echo "::error::$FILE does not reference peter-evans/slash-command-dispatch."
+            echo "::error file=$FILE::does not reference peter-evans/slash-command-dispatch"
             exit 1
           fi
-          echo "Regenerate-dispatch workflow present + wired to slash-command-dispatch."
+          if ! grep -qF 'event-type-suffix: -plan' "$FILE"; then
+            echo "::error file=$FILE::missing 'event-type-suffix: -plan' (needed to construct 'regenerate-plan' event)"
+            exit 1
+          fi
+          if ! grep -qF 'commands: regenerate' "$FILE"; then
+            echo "::error file=$FILE::missing 'commands: regenerate'"
+            exit 1
+          fi
+          if ! grep -qF 'types: [regenerate-plan]' .github/workflows/plan.yml; then
+            echo "::error file=.github/workflows/plan.yml::missing 'types: [regenerate-plan]' repository_dispatch listener — /regenerate fires but plan.yml does nothing"
+            exit 1
+          fi
+          echo "Regenerate-dispatch flow wired end-to-end."
