@@ -27,6 +27,9 @@ const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const KB_PATH = join(REPO_ROOT, "config", "knowledge-base.md");
 const MIGRATION_RULES_PATH = join(REPO_ROOT, "config", "migration-rules.md");
 const PROMPTS_DIR = join(REPO_ROOT, "prompts");
+// outputs/plans/ holds real Stage 1 emissions. Drift between Claude-cited
+// KB-IDs and knowledge-base.md is a real-world bug — gate here.
+const PLANS_DIR = join(REPO_ROOT, "outputs", "plans");
 
 // Section header in knowledge-base.md is `#### N.N.N Title` (no `KB-` prefix);
 // callers refer to it as `KB-N.N.N`. Both spellings normalize to the same ID.
@@ -86,7 +89,16 @@ function extractKbIds(kbPath: string): ExtractedIds {
 
 function walkMarkdown(dir: string): string[] {
   const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    // Directory may not exist yet (e.g. outputs/plans/ on a fresh checkout
+    // before Stage 1 has run). Silently skip — the gate is "every cited
+    // KB-ID must resolve", not "outputs/plans/ must exist".
+    return out;
+  }
+  for (const entry of entries) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
       out.push(...walkMarkdown(full));
@@ -142,7 +154,11 @@ function main(): number {
     });
   }
 
-  const refFiles = [MIGRATION_RULES_PATH, ...walkMarkdown(PROMPTS_DIR)];
+  const refFiles = [
+    MIGRATION_RULES_PATH,
+    ...walkMarkdown(PROMPTS_DIR),
+    ...walkMarkdown(PLANS_DIR),  // real Stage 1 outputs — Claude may cite a non-existent KB-ID
+  ];
   const refs = extractReferences(refFiles);
   for (const ref of refs) {
     if (!ids.has(ref.id)) {
