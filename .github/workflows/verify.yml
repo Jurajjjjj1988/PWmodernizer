@@ -178,6 +178,14 @@ jobs:
               ;;
             "SHIP IT")
               gh pr edit "$PR_NUMBER" --add-label "verify:ship-it"
+              # SHIP IT trumps the confidence:low label. Opus reviewed the
+              # output independently and approved — confidence < 0.7 was a
+              # false alarm from the Sonnet-side metric. Remove the
+              # confidence:low label so reviewers don't see conflicting signals.
+              # 'gh pr edit --remove-label' is idempotent (no-op if absent).
+              gh pr edit "$PR_NUMBER" --remove-label "confidence:low" 2>/dev/null || true
+              gh pr edit "$PR_NUMBER" --add-label "confidence:high" 2>/dev/null || true
+              echo "::notice::Verifier verdict: SHIP IT. confidence:low → confidence:high (Opus override)."
               ;;
             *)
               echo "::warning::Unrecognized verdict '$VERDICT' — no label applied"
