@@ -1,0 +1,224 @@
+{
+  "inputBasename": "checkout-flow.cy.js",
+  "sourceFramework": "cypress",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "completes a credit-card checkout after updating cart quantity @positive @e2e",
+      "userAction": "User updates the quantity of the second cart item, navigates to checkout, fills in valid credit card details, and submits the order.",
+      "expectedAssertions": [
+        "URL navigates to /order-confirmed after payment submission",
+        "'Order confirmed' heading is visible on the confirmation page",
+        "Order summary total element containing '$' is visible"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "disables the Checkout button when cart is empty @negative",
+      "userAction": "User removes all items from the cart, leaving it empty.",
+      "expectedAssertions": [
+        "Empty cart banner is visible after all items removed",
+        "Checkout button is disabled (not actionable) when cart is empty"
+      ]
+    }
+  ],
+  "requiredPOMs": [
+    "outputs/tests/pages/checkout.page.ts"
+  ],
+  "requiredFixtures": [
+    "outputs/tests/fixtures/checkout.fixture.ts"
+  ],
+  "locatorTable": [
+    {
+      "original": "cy.get('.cart-row')",
+      "target": "page.getByTestId('cart-row')",
+      "confidence": "low",
+      "notes": "CSS class only; no testid or ARIA role evidence. Q1: ask FE team to add data-testid='cart-row'. Fallback: locator('.cart-row')."
+    },
+    {
+      "original": "cy.get('.cart-row').eq(1)",
+      "target": "page.getByTestId('cart-row').filter({ hasText: /<product name>/ })",
+      "confidence": "low",
+      "notes": "Index selector on CSS class. Product name for row 2 unknown. Q1: reviewer must supply the second row's product name. Positional fallback: locator('.cart-row').nth(1) with WHY-comment."
+    },
+    {
+      "original": ".find('.qty-input')",
+      "target": "page.getByLabel(/quantity/i)",
+      "confidence": "med",
+      "notes": "Class name 'qty-input' implies a quantity field; visible <label> unconfirmed. Q2. Fall back to locator('input[name=\"qty-input\"]') if no label."
+    },
+    {
+      "original": "cy.contains('Update cart')",
+      "target": "page.getByRole('button', { name: /update cart/i })",
+      "confidence": "med",
+      "notes": "Text is visible; element role assumed <button>. Q3: could be <a> link. Fall back to getByRole('link', { name: /update cart/i }) if not button."
+    },
+    {
+      "original": "cy.contains('Checkout')",
+      "target": "page.getByRole('button', { name: /checkout/i })",
+      "confidence": "med",
+      "notes": "Text visible; role could be <button> or <a>. Q4. Fall back to getByRole('link', { name: /checkout/i }) if not button."
+    },
+    {
+      "original": "cy.get('input[name=\"card\"]')",
+      "target": "page.getByLabel(/card number/i)",
+      "confidence": "med",
+      "notes": "name='card' implies card-number field; label text unconfirmed. Q6: CRITICAL — if inside Stripe/third-party iframe, must be page.frameLocator('iframe[...]').getByLabel(...). Fallback: locator('input[name=\"card\"]')."
+    },
+    {
+      "original": "cy.get('input[name=\"exp\"]')",
+      "target": "page.getByLabel(/expiry|expiration|exp date/i)",
+      "confidence": "med",
+      "notes": "name='exp' implies expiry field; label unconfirmed. Same iframe risk as card number — Q6. Fallback: locator('input[name=\"exp\"]')."
+    },
+    {
+      "original": "cy.get('input[name=\"cvc\"]')",
+      "target": "page.getByLabel(/cvc|cvv|security code/i)",
+      "confidence": "med",
+      "notes": "name='cvc' implies CVC field; label unconfirmed. Same iframe risk as card number — Q6. Fallback: locator('input[name=\"cvc\"]')."
+    },
+    {
+      "original": "cy.get('button.pay-now')",
+      "target": "page.getByRole('button', { name: /pay now/i })",
+      "confidence": "med",
+      "notes": "CSS class 'pay-now' suggests accessible name 'Pay now'; unconfirmed. Q7. Fallback: locator('button.pay-now') with WHY-comment."
+    },
+    {
+      "original": "cy.contains('Order confirmed')",
+      "target": "page.getByRole('heading', { name: /order confirmed/i })",
+      "confidence": "med",
+      "notes": "Confirmation-page headline assumed to be <h1>/<h2>. Q8: could be non-heading element. Fall back to getByText(/order confirmed/i)."
+    },
+    {
+      "original": "cy.get('.summary-total')",
+      "target": "page.locator('.summary-total')",
+      "confidence": "low",
+      "notes": "CSS class only; no testid or role evidence. Q9: ask FE team to add data-testid='summary-total'. Interim fallback: locator('.summary-total') with WHY-comment."
+    },
+    {
+      "original": "cy.get('.cart-row .remove-btn')",
+      "target": "page.getByRole('button', { name: /remove/i })",
+      "confidence": "med",
+      "notes": "Class 'remove-btn' implies 'Remove' label; accessible name unconfirmed. Q5. Fallback: locator('.remove-btn') scoped within the row."
+    },
+    {
+      "original": "cy.get('.empty-cart-banner')",
+      "target": "page.getByRole('status')",
+      "confidence": "low",
+      "notes": "CSS class only; ARIA role unknown. Q10: could be role='alert' or no role at all. Fallback: locator('.empty-cart-banner') with WHY-comment 'Q10 unresolved'."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Cart row container",
+      "assumedLocator": "page.getByTestId('cart-row')",
+      "sourceLocator": "cy.get('.cart-row')",
+      "whyComment": "Q1 unresolved: no data-testid on cart-row — CSS class fallback used.",
+      "reviewerFallback": "Ask FE team to add data-testid='cart-row' to the cart row component, then update to getByTestId."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Second cart row (index 1)",
+      "assumedLocator": "page.getByTestId('cart-row').filter({ hasText: /<product name>/ })",
+      "sourceLocator": "cy.get('.cart-row').eq(1)",
+      "whyComment": "Q1 unresolved: second row product name unknown — positional fallback locator('.cart-row').nth(1) used.",
+      "reviewerFallback": "Provide the product name visible in the second cart row so the filter can be text-based instead of index-based."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Cart item quantity input",
+      "assumedLocator": "page.getByLabel(/quantity/i)",
+      "sourceLocator": ".find('.qty-input')",
+      "whyComment": "Q2 unresolved: quantity input label not confirmed — getByLabel assumed from class name hint.",
+      "reviewerFallback": "Confirm the <label> text or aria-label value for the quantity field, or request an aria-label='Quantity' addition from FE."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Update cart button",
+      "assumedLocator": "page.getByRole('button', { name: /update cart/i })",
+      "sourceLocator": "cy.contains('Update cart')",
+      "whyComment": "Q3 unresolved: element role assumed button — could be <a> link.",
+      "reviewerFallback": "Inspect DOM to confirm <button> vs <a>; switch to getByRole('link', ...) if needed."
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Checkout button / link",
+      "assumedLocator": "page.getByRole('button', { name: /checkout/i })",
+      "sourceLocator": "cy.contains('Checkout')",
+      "whyComment": "Q4 unresolved: element role assumed button — could be <a> link to checkout page.",
+      "reviewerFallback": "Inspect DOM to confirm <button> vs <a>; switch to getByRole('link', ...) if needed."
+    },
+    {
+      "pinId": 6,
+      "elementDescription": "Card number input",
+      "assumedLocator": "page.getByLabel(/card number/i)",
+      "sourceLocator": "cy.get('input[name=\"card\"]')",
+      "whyComment": "Q6 unresolved: label text unconfirmed and iframe presence unknown — getByLabel assumed on top-level page.",
+      "reviewerFallback": "CRITICAL: confirm whether payment inputs are inside a Stripe/third-party iframe. If yes, all three card locators must be prefixed page.frameLocator('iframe[...]'). Provide iframe selector and label text."
+    },
+    {
+      "pinId": 7,
+      "elementDescription": "Card expiry input",
+      "assumedLocator": "page.getByLabel(/expiry|expiration|exp date/i)",
+      "sourceLocator": "cy.get('input[name=\"exp\"]')",
+      "whyComment": "Q6 unresolved: expiry label text unconfirmed; same iframe risk as card number.",
+      "reviewerFallback": "Resolve Q6 (iframe) first; then confirm visible label text for the expiry field."
+    },
+    {
+      "pinId": 8,
+      "elementDescription": "CVC input",
+      "assumedLocator": "page.getByLabel(/cvc|cvv|security code/i)",
+      "sourceLocator": "cy.get('input[name=\"cvc\"]')",
+      "whyComment": "Q6 unresolved: CVC label text unconfirmed; same iframe risk as card number.",
+      "reviewerFallback": "Resolve Q6 (iframe) first; then confirm visible label text for the CVC field."
+    },
+    {
+      "pinId": 9,
+      "elementDescription": "Pay now / submit payment button",
+      "assumedLocator": "page.getByRole('button', { name: /pay now/i })",
+      "sourceLocator": "cy.get('button.pay-now')",
+      "whyComment": "Q7 unresolved: button accessible name inferred from CSS class 'pay-now' — not confirmed.",
+      "reviewerFallback": "Inspect button's textContent or aria-label; update the name regex to match exactly."
+    },
+    {
+      "pinId": 10,
+      "elementDescription": "Order summary total",
+      "assumedLocator": "page.locator('.summary-total')",
+      "sourceLocator": "cy.get('.summary-total')",
+      "whyComment": "Q9 unresolved: no testid or ARIA role found — CSS class fallback used.",
+      "reviewerFallback": "Ask FE team to add data-testid='summary-total'; update to page.getByTestId('summary-total') once available."
+    },
+    {
+      "pinId": 11,
+      "elementDescription": "Order confirmed heading",
+      "assumedLocator": "page.getByRole('heading', { name: /order confirmed/i })",
+      "sourceLocator": "cy.contains('Order confirmed')",
+      "whyComment": "Q8 unresolved: element assumed to be <h1>/<h2> heading — actual tag not confirmed.",
+      "reviewerFallback": "Inspect order confirmation page DOM. If not a heading element, switch to getByText(/order confirmed/i)."
+    },
+    {
+      "pinId": 12,
+      "elementDescription": "Remove cart item button(s)",
+      "assumedLocator": "page.getByRole('button', { name: /remove/i })",
+      "sourceLocator": "cy.get('.cart-row .remove-btn')",
+      "whyComment": "Q5 unresolved: remove button accessible name inferred from class 'remove-btn' — not confirmed.",
+      "reviewerFallback": "Inspect each remove button's textContent or aria-label; adjust the name regex to match."
+    },
+    {
+      "pinId": 13,
+      "elementDescription": "Empty cart banner",
+      "assumedLocator": "page.getByRole('status')",
+      "sourceLocator": "cy.get('.empty-cart-banner')",
+      "whyComment": "Q10 unresolved: ARIA role on empty cart banner unknown — role='status' assumed.",
+      "reviewerFallback": "Inspect DOM for role attribute. If role='alert', use getByRole('alert'). If no role, fall back to locator('.empty-cart-banner') and request role='status' from FE."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.77,
+    "smellCountDelta": -24,
+    "locDelta": 165,
+    "antiPatternCoverage": "24/24"
+  }
+}
