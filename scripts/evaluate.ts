@@ -85,8 +85,16 @@ function emptySmells(): SmellCount {
   };
 }
 
-function countSmells(source: string): SmellCount {
+function countSmells(rawSource: string): SmellCount {
   const c = emptySmells();
+  // Strip comments before pattern detection — comments often reference the
+  // ORIGINAL smell (e.g., 'replaces waitForTimeout(7000) from line 25') as
+  // documentation, not as a re-introduction of the smell. False-positives
+  // from comment-scanning artificially inflate output-smell counts and
+  // depress confidence scores. The same logic is applied before LCS overlap.
+  const source = rawSource
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
   // Hard waits (Playwright + Cypress + Selenium variants).
   c.hardWaits += (source.match(/waitForTimeout\s*\(/g) ?? []).length;
   c.hardWaits += (source.match(/cy\.wait\s*\(\s*\d+/g) ?? []).length;
@@ -180,8 +188,12 @@ function webFirstAssertionRate(source: string): number {
   return webFirst / total;
 }
 
-// ---- Forbidden patterns hard list.
-function findForbidden(source: string): string[] {
+// ---- Forbidden patterns hard list. Strip comments first to avoid flagging
+// references in WHY-comments (e.g., "// replaces waitForTimeout(7000)").
+function findForbidden(rawSource: string): string[] {
+  const source = rawSource
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
   const hits: string[] = [];
   if (/waitForTimeout/.test(source)) hits.push("waitForTimeout");
   if (/force\s*:\s*true/.test(source)) hits.push("force: true");
@@ -254,11 +266,15 @@ function longestCommonSubstring(a: string, b: string): string {
   let endIdx = 0;
   const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = 1; i <= m; i += 1) {
+    const row = dp[i];
+    const prevRow = dp[i - 1];
+    if (!row || !prevRow) continue;
     for (let j = 1; j <= n; j += 1) {
       if (a[i - 1] === b[j - 1]) {
-        dp[i][j] = (dp[i - 1][j - 1] ?? 0) + 1;
-        if ((dp[i][j] ?? 0) > maxLen) {
-          maxLen = dp[i][j] ?? 0;
+        const cell = (prevRow[j - 1] ?? 0) + 1;
+        row[j] = cell;
+        if (cell > maxLen) {
+          maxLen = cell;
           endIdx = i;
         }
       }
