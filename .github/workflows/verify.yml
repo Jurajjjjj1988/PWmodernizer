@@ -146,6 +146,13 @@ jobs:
             exit 0
           fi
           REPORT="outputs/reports/${INPUT_BASENAME}-verify.md"
+          if [ ! -f "$REPORT" ]; then
+            # Opus stage failed silently — no report written. Without this
+            # guard, `gh pr comment --body-file` would fail mid-step and the
+            # case statement wouldn't run, leaving the PR unlabeled.
+            echo "::error::Verify report $REPORT was not produced by the Opus stage. Cannot label code PR — fall back to manual review."
+            exit 1
+          fi
           gh pr comment "$PR_NUMBER" --body-file "$REPORT"
           # Parse 3-level verdict: SHIP IT / FIX FIRST / START OVER
           VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//')
