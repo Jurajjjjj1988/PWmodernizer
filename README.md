@@ -102,6 +102,11 @@ inputs/bad-playwright/foo.spec.ts
 | `npm run check:assemble` | Prompt fragment `{{include:}}` markers resolve + `prompts/_assembled/` is in sync with source | When editing prompts/_fragments/ or prompts/*.md (stale detection catches forgotten `npm run assemble-prompts`) |
 | `npm run check:envelope` | Canonical envelope schema sanity | When editing scripts/plan-envelope.schema.json |
 | `npm run check:derive` | derive-envelope works on every example plan (12/12 roundtrip) | When editing scripts/derive-envelope.ts or example expected-plan.md |
+| `npm run check:coverage` | plan-vs-code coverage check (LPW closure) — verifies envelope scenario IDs appear as `// plan:scenario=X` comments in code | When editing scripts/plan-code-coverage.ts or testing a Stage 2 output locally |
+| `npm run build-inventory` | Builds `outputs/.snippets-inventory.md` from existing POMs/fixtures/helpers (Aider/Cody pattern) | Debugging Stage 2 inventory output |
+| `npm run metrics:report` | Reads `outputs/.metrics.db` and prints cross-run trends (per-framework counts, KB-ID frequency, verdict distribution, confidence sparkline) | Inspecting pipeline trends after ≥3 real runs |
+| `npm run metrics:export` | Exports the same data as JSON | CI artifact upload, future dashboard backend |
+| `npm run dashboard` | Starts a read-only web UI at http://localhost:8000 reading `outputs/.metrics.db` (3 charts + KB-ID table) | Visual review of cross-run metrics |
 | `npm run calibrate` | Run each validator against 3 good + 3 bad fixtures | After validator code changes |
 | `npm run derive-envelope -- --plan <md> --out <json>` | Backfill envelope from markdown plan | When manually fixing a plan that's missing envelope |
 | `npm run assemble-prompts` | Expand `{{include:}}` markers into `prompts/_assembled/` | After editing prompts/_fragments/ |
@@ -265,6 +270,11 @@ The pipeline implements specific patterns from the LLM-as-code-author literature
 - **3-level verdict ladder (from QA-skills `22-reality-check.md`):** `SHIP IT` / `FIX FIRST` / `START OVER` — round-up rule, no soft middle.
 - **Uncalibrated validators run in warn-only mode (Sakasegawa 2026):** `validate-examples.ts` is `--warn` until `tools/calibrate-pipeline/` fixtures land. Premature gating produces false confidence.
 - **Abandon-and-regenerate flow:** `/regenerate` slash command via `peter-evans/slash-command-dispatch` lets a reviewer close a bad plan PR and force fresh Stage 1 with comment body as feedback. (`regenerate-dispatch.yml`)
+- **tree-sitter AST diff for Java + Python** — real Zhang-Shasha tree-edit-distance with identifier normalization for Selenium .java and .py inputs. Replaces the LCS string-overlap fallback for non-TS inputs (commit `666332a`). Calibration 10/10 (was 6/6).
+- **Plan-vs-code coverage check (LPW closure)** — `scripts/plan-code-coverage.ts` runs post-Stage-2: every `scenarios[].id` from the envelope must appear as exactly one `// plan:scenario=<id>` comment in the generated code; `requiredPOMs[]` and `requiredFixtures[]` files must exist; subtractive plans must only import `@playwright/test` + relative paths. arXiv 2411.14503 (LPW) contract enforced end-to-end.
+- **SQLite metrics persistence** — every Stage 1 / Stage 2 / verify run logs to `outputs/.metrics.db` (3 tables: migrations, plans, verifications). `npm run metrics:report` shows cross-run trends; `npm run dashboard` opens a read-only web UI; `npm run metrics:export` emits JSON for downstream tooling.
+- **Semantic regression workflow** — manually-triggered `regression-semantic.yml` samples 3-5 examples, runs real Claude analyze stage against each, compares to `expected-plan.md` via 5 axes (anti-pattern total, KB-ID coverage, locator total, confidence histogram, required sections). Catches "prompt change degraded quality" before release.
+- **Parallel regression-test CI** — 13 sequential gates → 10 matrix entries with shared npm cache. Estimated runtime ~5 min → ~45-60s (5-10× speedup).
 
 ## Contributing
 
