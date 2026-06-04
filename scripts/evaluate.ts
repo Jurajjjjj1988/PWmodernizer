@@ -376,6 +376,21 @@ ${r.forbidden.length === 0 ? "✅ None." : r.forbidden.map((f) => `- ❌ \`${f}\
 // ---- Main.
 function main(): void {
   const args = parseCliArgs();
+  // Explicit file-existence guards with workflow-friendly error annotations.
+  // Raw readFileSync ENOENT messages are cryptic; this gives reviewers a
+  // clear pointer to the missing file.
+  for (const [name, path] of Object.entries({
+    input: args.input,
+    output: args.output,
+    plan: args.plan,
+  })) {
+    try {
+      readFileSync(path, "utf8");
+    } catch {
+      process.stderr.write(`::error::evaluate: --${name} not found at ${path}\n`);
+      process.exit(1);
+    }
+  }
   const inputSrc = readFileSync(args.input, "utf8");
   const outputSrc = readFileSync(args.output, "utf8");
   const planMd = readFileSync(args.plan, "utf8");
