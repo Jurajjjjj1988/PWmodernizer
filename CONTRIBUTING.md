@@ -34,7 +34,7 @@ In rough order of impact per LOC:
 ## Pre-push checklist
 
 ```bash
-npm run smoke            # MUST pass — typecheck + 6 validators + calibration (24 fixtures) + eslint
+npm run smoke            # MUST pass — typecheck + 6 validators + calibration (46 fixtures) + eslint
 git push
 ```
 
