@@ -117,8 +117,29 @@ jobs:
           # Parse 3-level verdict: SHIP IT / FIX FIRST / START OVER
           VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//')
           case "$VERDICT" in
-            "START OVER") gh pr edit "$PR_NUMBER" --add-label "verify:start-over" ;;
-            "FIX FIRST")  gh pr edit "$PR_NUMBER" --add-label "verify:fix-first" ;;
-            "SHIP IT")    gh pr edit "$PR_NUMBER" --add-label "verify:ship-it" ;;
-            *) echo "::warning::Unrecognized verdict '$VERDICT' — no label applied" ;;
+            "START OVER")
+              gh pr edit "$PR_NUMBER" --add-label "verify:start-over"
+              # Block-as-failed-check: a START OVER verdict means the verifier
+              # rejected the migration. Exit 1 so this workflow run shows as a
+              # failed check on the PR. Combined with a branch-protection rule
+              # requiring this check, the code PR cannot be merged until the
+              # reviewer either fixes the issues or comments /regenerate (see
+              # regenerate-dispatch.yml).
+              echo "::error::Verifier verdict: START OVER. Code PR #$PR_NUMBER blocked from merge."
+              exit 1
+              ;;
+            "FIX FIRST")
+              gh pr edit "$PR_NUMBER" --add-label "verify:fix-first"
+              # FIX FIRST = soft block. Workflow succeeds (check passes) but
+              # the label signals human reviewer must adjudicate. Branch
+              # protection can also be configured to require the label
+              # absence via a separate workflow if you want hard-block here.
+              echo "::warning::Verifier verdict: FIX FIRST. Reviewer should adjudicate before merge."
+              ;;
+            "SHIP IT")
+              gh pr edit "$PR_NUMBER" --add-label "verify:ship-it"
+              ;;
+            *)
+              echo "::warning::Unrecognized verdict '$VERDICT' — no label applied"
+              ;;
           esac
