@@ -101,6 +101,7 @@ inputs/bad-playwright/foo.spec.ts
 | `npm run check:examples` | Examples KB/Q-ID cross-references (strict) | When editing examples/*/expected-plan.md |
 | `npm run check:assemble` | Prompt fragment `{{include:}}` markers resolve | When editing prompts/_fragments/ or prompts/*.md |
 | `npm run check:envelope` | Canonical envelope schema sanity | When editing scripts/plan-envelope.schema.json |
+| `npm run check:derive` | derive-envelope works on every example plan (12/12 roundtrip) | When editing scripts/derive-envelope.ts or example expected-plan.md |
 | `npm run calibrate` | Run each validator against 3 good + 3 bad fixtures | After validator code changes |
 | `npm run derive-envelope -- --plan <md> --out <json>` | Backfill envelope from markdown plan | When manually fixing a plan that's missing envelope |
 | `npm run assemble-prompts` | Expand `{{include:}}` markers into `prompts/_assembled/` | After editing prompts/_fragments/ |
