@@ -23,6 +23,8 @@
     "dashboard": "tsx scripts/dashboard.ts",
     "stress:test-stage0": "tsx scripts/test-stage0.ts",
     "stage1:replay": "tsx scripts/stage1-replay.ts",
+    "trajectory:trace": "tsx scripts/trajectory-trace.ts",
+    "trajectory:show": "tsx scripts/trajectory-show.ts",
     "ast-diff:sweep": "tsx scripts/ast-diff-threshold-sweep.ts",
     "check:dom-ground": "tsx scripts/dom-ground.ts --url mock://always-resolve --probe examples/bad-playwright-01-flaky-waits/expected-output.spec.ts --report /tmp/dom-probe-smoke.json",
     "check:dom-ground:live": "tsx scripts/dom-ground-live-calibrate.ts",

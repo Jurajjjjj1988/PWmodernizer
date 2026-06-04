@@ -33,3 +33,7 @@ outputs/.metrics.db-shm
 
 # Stage 1 replay cache (local-only, managed by scripts/stage1-replay.ts).
 outputs/.stage1-cache/
+
+# Trajectory replay JSONs (local-only, managed by scripts/trajectory-trace.ts;
+# Layer 11 / Trajectory Review scaffold).
+outputs/.trajectories/
