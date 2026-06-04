@@ -19,6 +19,7 @@
     "calibrate": "tsx tools/calibrate-pipeline/run-calibration.ts",
     "metrics:report": "tsx scripts/metrics-report.ts",
     "metrics:export": "tsx scripts/metrics-export.ts",
+    "dashboard": "tsx scripts/dashboard.ts",
     "lint": "eslint 'outputs/tests/**/*.ts'",
     "lint:fix": "eslint --fix 'outputs/tests/**/*.ts'",
     "typecheck": "tsc --noEmit -p outputs/tests/tsconfig.json",
