@@ -19,7 +19,7 @@
  */
 
 import { parseArgs } from "node:util";
-import { MetricsDB, type QueryRow } from "./metrics.js";
+import { MetricsDB, normalizeSourceFramework, type QueryRow, type SourceFramework } from "./metrics.js";
 
 interface CliArgs {
   db: string;
@@ -66,6 +66,17 @@ interface VerdictAgg {
   pct: number;
 }
 
+interface FrameworkQualityRow {
+  framework: SourceFramework;
+  migrationCount: number;
+  verificationCount: number;
+  medianConfidence: number;
+  meanConfidence: number;
+  shipItRate: number;
+  fixFirstRate: number;
+  startOverRate: number;
+}
+
 interface ReportData {
   summary: {
     totalMigrations: number;
@@ -78,6 +89,8 @@ interface ReportData {
   topKbIds: KbCitation[];
   verdicts: VerdictAgg[];
   confidenceTrend: number[];
+  /** Sorted DESC by medianConfidence — answers "best/worst framework". */
+  frameworkQuality: FrameworkQualityRow[];
 }
 
 function num(row: QueryRow, key: string): number {
@@ -88,6 +101,73 @@ function num(row: QueryRow, key: string): number {
 function str(row: QueryRow, key: string): string {
   const v = row[key];
   return typeof v === "string" ? v : "";
+}
+
+function medianOf(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
+  return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+}
+
+/**
+ * Per-framework quality table — mirrors dashboard.ts and metrics-export.ts.
+ * Median confidence (resistant to outliers) sorts the table; SHIP IT rate
+ * is the secondary signal. Verdict counts join via input_basename.
+ */
+function buildFrameworkQuality(db: MetricsDB): FrameworkQualityRow[] {
+  const confRows = db.query(`SELECT source_framework, aggregate_confidence FROM migrations`);
+  const confByFw = new Map<SourceFramework, number[]>();
+  for (const r of confRows) {
+    const fw = normalizeSourceFramework(str(r, "source_framework"));
+    const samples = confByFw.get(fw) ?? [];
+    samples.push(num(r, "aggregate_confidence"));
+    confByFw.set(fw, samples);
+  }
+
+  const verdictRows = db.query(
+    `SELECT COALESCE(m.source_framework, 'unknown') AS framework,
+            v.verdict AS verdict,
+            COUNT(*) AS count
+     FROM verifications v
+     LEFT JOIN migrations m ON m.input_basename = v.input_basename
+     GROUP BY framework, verdict`,
+  );
+  interface Tally { shipIt: number; fixFirst: number; startOver: number }
+  const verdictByFw = new Map<SourceFramework, Tally>();
+  for (const r of verdictRows) {
+    const fw = normalizeSourceFramework(str(r, "framework"));
+    const verdict = str(r, "verdict");
+    const c = num(r, "count");
+    const t = verdictByFw.get(fw) ?? { shipIt: 0, fixFirst: 0, startOver: 0 };
+    if (verdict === "SHIP IT") t.shipIt += c;
+    else if (verdict === "FIX FIRST") t.fixFirst += c;
+    else if (verdict === "START OVER") t.startOver += c;
+    verdictByFw.set(fw, t);
+  }
+
+  const allFrameworks = new Set<SourceFramework>([...confByFw.keys(), ...verdictByFw.keys()]);
+  const rows: FrameworkQualityRow[] = [];
+  for (const fw of allFrameworks) {
+    const samples = confByFw.get(fw) ?? [];
+    const verdicts = verdictByFw.get(fw) ?? { shipIt: 0, fixFirst: 0, startOver: 0 };
+    const totalVerdicts = verdicts.shipIt + verdicts.fixFirst + verdicts.startOver;
+    const meanConfidence = samples.length === 0
+      ? 0
+      : samples.reduce((a, b) => a + b, 0) / samples.length;
+    rows.push({
+      framework: fw,
+      migrationCount: samples.length,
+      verificationCount: totalVerdicts,
+      medianConfidence: medianOf(samples),
+      meanConfidence,
+      shipItRate: totalVerdicts === 0 ? 0 : verdicts.shipIt / totalVerdicts,
+      fixFirstRate: totalVerdicts === 0 ? 0 : verdicts.fixFirst / totalVerdicts,
+      startOverRate: totalVerdicts === 0 ? 0 : verdicts.startOver / totalVerdicts,
+    });
+  }
+  return rows.sort((a, b) => b.medianConfidence - a.medianConfidence);
 }
 
 function buildReport(db: MetricsDB, last: number | null): ReportData {
@@ -159,7 +239,7 @@ function buildReport(db: MetricsDB, last: number | null): ReportData {
       latestUnix: num(summaryRow, "latest") || null,
     },
     perFramework: frameworkRows.map((r) => ({
-      framework: str(r, "source_framework"),
+      framework: normalizeSourceFramework(str(r, "source_framework")),
       count: num(r, "count"),
       avgAggregateConfidence: num(r, "avg_conf"),
       avgSmellRemovalRate: num(r, "avg_smell"),
@@ -167,6 +247,7 @@ function buildReport(db: MetricsDB, last: number | null): ReportData {
     topKbIds,
     verdicts,
     confidenceTrend,
+    frameworkQuality: buildFrameworkQuality(db),
   };
 }
 
@@ -190,6 +271,27 @@ function sparkline(values: number[]): string {
 function formatUnix(ts: number | null): string {
   if (ts === null) return "(none)";
   return new Date(ts * 1000).toISOString().slice(0, 19).replace("T", " ");
+}
+
+function renderFrameworkQualitySection(quality: FrameworkQualityRow[]): string[] {
+  const out: string[] = [];
+  out.push("## Migrator quality by framework (best → worst, by median conf.)");
+  if (quality.length === 0) {
+    out.push("  (no migration rows)");
+    return out;
+  }
+  out.push("  framework                 n   med_conf   mean_conf   SHIP%   FIX%   STOP%");
+  for (const q of quality) {
+    const fw = q.framework.padEnd(24);
+    const n = String(q.migrationCount).padStart(3);
+    const med = q.medianConfidence.toFixed(3).padStart(8);
+    const mean = q.meanConfidence.toFixed(3).padStart(9);
+    const ship = (q.shipItRate * 100).toFixed(1).padStart(5);
+    const fix = (q.fixFirstRate * 100).toFixed(1).padStart(5);
+    const stop = (q.startOverRate * 100).toFixed(1).padStart(5);
+    out.push(`  ${fw}  ${n}   ${med}   ${mean}   ${ship}  ${fix}  ${stop}`);
+  }
+  return out;
 }
 
 function renderText(data: ReportData): string {
@@ -216,6 +318,9 @@ function renderText(data: ReportData): string {
       lines.push(`  ${fw}  ${ct}   ${ac}   ${sr}`);
     }
   }
+  lines.push("");
+
+  lines.push(...renderFrameworkQualitySection(data.frameworkQuality));
   lines.push("");
 
   lines.push("## Top 10 KB-IDs cited");

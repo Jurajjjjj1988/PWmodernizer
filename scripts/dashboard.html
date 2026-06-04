@@ -26,6 +26,36 @@
     <h2 class="text-lg font-semibold mb-2">Confidence trend (last 30)</h2>
     <canvas id="trendChart" height="120"></canvas>
   </section>
+  <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white rounded-lg shadow p-4">
+      <h2 class="text-lg font-semibold mb-2">Verdict distribution by framework</h2>
+      <p class="text-xs text-slate-500 mb-2">Stacked counts — joined via input_basename.</p>
+      <canvas id="verdictByFwChart" height="200"></canvas>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <h2 class="text-lg font-semibold mb-2">Confidence trend by framework</h2>
+      <p class="text-xs text-slate-500 mb-2">Last 30 migrations per framework, oldest → newest.</p>
+      <canvas id="trendByFwChart" height="200"></canvas>
+    </div>
+  </section>
+  <section class="bg-white rounded-lg shadow p-4">
+    <h2 class="text-lg font-semibold mb-2">Migrator quality by framework</h2>
+    <p class="text-xs text-slate-500 mb-2">Sorted by median confidence — top row = framework Migrator handles best.</p>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b">
+          <th class="py-1">Framework</th>
+          <th class="py-1 text-right">Migrations</th>
+          <th class="py-1 text-right">Median conf.</th>
+          <th class="py-1 text-right">Mean conf.</th>
+          <th class="py-1 text-right">SHIP IT</th>
+          <th class="py-1 text-right">FIX FIRST</th>
+          <th class="py-1 text-right">START OVER</th>
+        </tr>
+      </thead>
+      <tbody id="qualityTable"></tbody>
+    </table>
+  </section>
   <section class="bg-white rounded-lg shadow p-4">
     <h2 class="text-lg font-semibold mb-2">Top 10 KB-IDs cited</h2>
     <table class="w-full text-sm">
@@ -76,6 +106,83 @@
     },
     options: { responsive: true, scales: { y: { beginAtZero: true, max: 1 } } },
   });
+
+  // Stacked verdict bar by framework.
+  const verdictByFw = data.verdictByFramework || [];
+  new Chart(document.getElementById('verdictByFwChart'), {
+    type: 'bar',
+    data: {
+      labels: verdictByFw.map((r) => r.framework),
+      datasets: [
+        { label: 'SHIP IT', data: verdictByFw.map((r) => r.shipIt), backgroundColor: '#10b981' },
+        { label: 'FIX FIRST', data: verdictByFw.map((r) => r.fixFirst), backgroundColor: '#f59e0b' },
+        { label: 'START OVER', data: verdictByFw.map((r) => r.startOver), backgroundColor: '#ef4444' },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true, title: { display: true, text: 'count' } },
+      },
+    },
+  });
+
+  // Multi-line confidence trend per framework. Each series has its own
+  // length — Chart.js handles ragged datasets fine when each point is an
+  // {x, y} pair rather than a parallel labels array.
+  const fwTrendSeries = data.confidenceTrendByFramework || [];
+  const fwColors = {
+    'bad-playwright': '#3b82f6',
+    'cypress': '#a855f7',
+    'selenium-java': '#f97316',
+    'selenium-python': '#14b8a6',
+    'unknown': '#94a3b8',
+  };
+  new Chart(document.getElementById('trendByFwChart'), {
+    type: 'line',
+    data: {
+      datasets: fwTrendSeries.map((s) => ({
+        label: s.framework,
+        data: s.points.map((p, i) => ({ x: i + 1, y: p.aggregateConfidence })),
+        borderColor: fwColors[s.framework] || '#6366f1',
+        backgroundColor: 'rgba(0,0,0,0)',
+        fill: false,
+        tension: 0.25,
+        spanGaps: true,
+      })),
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'sample # (oldest → newest)' } },
+        y: { beginAtZero: true, max: 1, title: { display: true, text: 'confidence' } },
+      },
+    },
+  });
+
+  // "Migrator quality by framework" table — sorted by median confidence DESC.
+  const qBody = document.getElementById('qualityTable');
+  const quality = data.frameworkQuality || [];
+  if (quality.length === 0) {
+    qBody.innerHTML = '<tr><td colspan="7" class="py-2 text-slate-500">No migrations recorded yet.</td></tr>';
+  } else {
+    const pct = (v) => (v * 100).toFixed(1) + '%';
+    qBody.innerHTML = quality
+      .map((row) =>
+        '<tr class="border-b">' +
+        '<td class="py-1 font-mono">' + row.framework + '</td>' +
+        '<td class="py-1 text-right">' + row.migrationCount + '</td>' +
+        '<td class="py-1 text-right">' + row.medianConfidence.toFixed(3) + '</td>' +
+        '<td class="py-1 text-right">' + row.meanConfidence.toFixed(3) + '</td>' +
+        '<td class="py-1 text-right text-emerald-700">' + pct(row.shipItRate) + '</td>' +
+        '<td class="py-1 text-right text-amber-700">' + pct(row.fixFirstRate) + '</td>' +
+        '<td class="py-1 text-right text-red-700">' + pct(row.startOverRate) + '</td>' +
+        '</tr>'
+      )
+      .join('');
+  }
+
   const tbody = document.getElementById('kbTable');
   if (data.topKbIds.length === 0) {
     tbody.innerHTML = '<tr><td colspan="2" class="py-2 text-slate-500">No plans recorded yet.</td></tr>';

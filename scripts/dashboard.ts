@@ -27,7 +27,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { MetricsDB, type QueryRow } from "./metrics.js";
+import { MetricsDB, normalizeSourceFramework, type QueryRow, type SourceFramework } from "./metrics.js";
 
 interface CliArgs {
   port: number;
@@ -58,6 +58,32 @@ interface TrendPoint {
   inputBasename: string;
 }
 
+/** Stacked-bar source — counts of each verdict per framework. */
+interface VerdictByFrameworkRow {
+  framework: SourceFramework;
+  shipIt: number;
+  fixFirst: number;
+  startOver: number;
+}
+
+/** One line on the multi-line confidence chart — sample is oldest→newest. */
+interface FrameworkTrendSeries {
+  framework: SourceFramework;
+  points: TrendPoint[];
+}
+
+/** "Which framework Migrator handles best/worst" — sorted table row. */
+interface FrameworkQualityRow {
+  framework: SourceFramework;
+  migrationCount: number;
+  verificationCount: number;
+  medianConfidence: number;
+  meanConfidence: number;
+  shipItRate: number;
+  fixFirstRate: number;
+  startOverRate: number;
+}
+
 interface DashboardData {
   generatedAtUnix: number;
   summary: {
@@ -71,6 +97,12 @@ interface DashboardData {
   topKbIds: KbCitation[];
   verdicts: VerdictAgg[];
   confidenceTrend: TrendPoint[];
+  /** Stacked-bar: verdict counts per framework (joined via input_basename). */
+  verdictByFramework: VerdictByFrameworkRow[];
+  /** Multi-line: last-N confidence points, grouped by framework. */
+  confidenceTrendByFramework: FrameworkTrendSeries[];
+  /** Sorted DESC by medianConfidence — answers "best/worst framework". */
+  frameworkQuality: FrameworkQualityRow[];
 }
 
 function parseCliArgs(): CliArgs {
@@ -99,6 +131,151 @@ function num(row: QueryRow, key: string): number {
 function str(row: QueryRow, key: string): string {
   const v = row[key];
   return typeof v === "string" ? v : "";
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
+  return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+}
+
+interface FrameworkVerdictTally {
+  shipIt: number;
+  fixFirst: number;
+  startOver: number;
+}
+
+/**
+ * Verdict counts grouped by framework. The `verifications` table doesn't
+ * carry source_framework (kept normalized — see metrics.ts schema), so we
+ * LEFT JOIN against `migrations` via input_basename. A verification for an
+ * input that was never recorded as a migration gets bucketed under
+ * "unknown" — matches normalizeSourceFramework() fallback.
+ */
+function buildVerdictByFramework(db: MetricsDB): VerdictByFrameworkRow[] {
+  const rows = db.query(
+    `SELECT COALESCE(m.source_framework, 'unknown') AS framework,
+            v.verdict AS verdict,
+            COUNT(*) AS count
+     FROM verifications v
+     LEFT JOIN migrations m ON m.input_basename = v.input_basename
+     GROUP BY framework, verdict`,
+  );
+  const tally = new Map<SourceFramework, FrameworkVerdictTally>();
+  for (const r of rows) {
+    const fw = normalizeSourceFramework(str(r, "framework"));
+    const verdict = str(r, "verdict");
+    const c = num(r, "count");
+    const existing = tally.get(fw) ?? { shipIt: 0, fixFirst: 0, startOver: 0 };
+    if (verdict === "SHIP IT") existing.shipIt += c;
+    else if (verdict === "FIX FIRST") existing.fixFirst += c;
+    else if (verdict === "START OVER") existing.startOver += c;
+    tally.set(fw, existing);
+  }
+  return Array.from(tally.entries())
+    .map(([framework, t]) => ({ framework, ...t }))
+    .sort((a, b) => b.shipIt + b.fixFirst + b.startOver - (a.shipIt + a.fixFirst + a.startOver));
+}
+
+/**
+ * Multi-line confidence trend, last 30 migrations per framework. We pull a
+ * generous LIMIT (30 * 5 buckets = 150) then trim each bucket client-side so
+ * each line has at most 30 oldest→newest points — avoids fighting LIMIT
+ * with a partition window which SQLite doesn't have without CTE gymnastics.
+ */
+function buildConfidenceTrendByFramework(db: MetricsDB): FrameworkTrendSeries[] {
+  const rows = db.query(
+    `SELECT created_at, aggregate_confidence, input_basename, source_framework
+     FROM migrations
+     ORDER BY created_at DESC
+     LIMIT 150`,
+  );
+  const buckets = new Map<SourceFramework, TrendPoint[]>();
+  for (const r of rows) {
+    const fw = normalizeSourceFramework(str(r, "source_framework"));
+    const existing = buckets.get(fw) ?? [];
+    if (existing.length >= 30) continue;
+    existing.push({
+      createdAtUnix: num(r, "created_at"),
+      aggregateConfidence: num(r, "aggregate_confidence"),
+      inputBasename: str(r, "input_basename"),
+    });
+    buckets.set(fw, existing);
+  }
+  // Bucket arrays are DESC by created_at — reverse to oldest→newest for the
+  // Chart.js x-axis. Frameworks with zero rows are omitted (no line drawn).
+  return Array.from(buckets.entries())
+    .map(([framework, points]) => {
+      // Bucket arrays come in DESC; reverse to oldest→newest for the chart.
+      const oldestToNewest = [...points].reverse();
+      return { framework, points: oldestToNewest };
+    })
+    .sort((a, b) => b.points.length - a.points.length);
+}
+
+/**
+ * "Which framework Migrator handles best/worst" — per-framework median
+ * confidence + SHIP IT rate, sorted DESC by median. Median (not mean) is
+ * the headline metric because a single low-confidence outlier shouldn't
+ * tank a framework that's otherwise consistent.
+ */
+function buildFrameworkQuality(db: MetricsDB): FrameworkQualityRow[] {
+  // Per-framework confidence samples (for median).
+  const confRows = db.query(
+    `SELECT source_framework, aggregate_confidence FROM migrations`,
+  );
+  const confByFw = new Map<SourceFramework, number[]>();
+  for (const r of confRows) {
+    const fw = normalizeSourceFramework(str(r, "source_framework"));
+    const samples = confByFw.get(fw) ?? [];
+    samples.push(num(r, "aggregate_confidence"));
+    confByFw.set(fw, samples);
+  }
+
+  // Per-framework verdict counts (joined the same way as verdictByFramework).
+  const verdictRows = db.query(
+    `SELECT COALESCE(m.source_framework, 'unknown') AS framework,
+            v.verdict AS verdict,
+            COUNT(*) AS count
+     FROM verifications v
+     LEFT JOIN migrations m ON m.input_basename = v.input_basename
+     GROUP BY framework, verdict`,
+  );
+  const verdictByFw = new Map<SourceFramework, FrameworkVerdictTally>();
+  for (const r of verdictRows) {
+    const fw = normalizeSourceFramework(str(r, "framework"));
+    const verdict = str(r, "verdict");
+    const c = num(r, "count");
+    const t = verdictByFw.get(fw) ?? { shipIt: 0, fixFirst: 0, startOver: 0 };
+    if (verdict === "SHIP IT") t.shipIt += c;
+    else if (verdict === "FIX FIRST") t.fixFirst += c;
+    else if (verdict === "START OVER") t.startOver += c;
+    verdictByFw.set(fw, t);
+  }
+
+  const allFrameworks = new Set<SourceFramework>([...confByFw.keys(), ...verdictByFw.keys()]);
+  const rows: FrameworkQualityRow[] = [];
+  for (const fw of allFrameworks) {
+    const samples = confByFw.get(fw) ?? [];
+    const verdicts = verdictByFw.get(fw) ?? { shipIt: 0, fixFirst: 0, startOver: 0 };
+    const totalVerdicts = verdicts.shipIt + verdicts.fixFirst + verdicts.startOver;
+    const meanConfidence = samples.length === 0
+      ? 0
+      : samples.reduce((a, b) => a + b, 0) / samples.length;
+    rows.push({
+      framework: fw,
+      migrationCount: samples.length,
+      verificationCount: totalVerdicts,
+      medianConfidence: median(samples),
+      meanConfidence,
+      shipItRate: totalVerdicts === 0 ? 0 : verdicts.shipIt / totalVerdicts,
+      fixFirstRate: totalVerdicts === 0 ? 0 : verdicts.fixFirst / totalVerdicts,
+      startOverRate: totalVerdicts === 0 ? 0 : verdicts.startOver / totalVerdicts,
+    });
+  }
+  return rows.sort((a, b) => b.medianConfidence - a.medianConfidence);
 }
 
 function buildData(db: MetricsDB): DashboardData {
@@ -174,7 +351,7 @@ function buildData(db: MetricsDB): DashboardData {
       latestUnix: num(summaryRow, "latest") || null,
     },
     perFramework: frameworkRows.map((r) => ({
-      framework: str(r, "source_framework"),
+      framework: normalizeSourceFramework(str(r, "source_framework")),
       count: num(r, "count"),
       avgAggregateConfidence: num(r, "avg_conf"),
       avgSmellRemovalRate: num(r, "avg_smell"),
@@ -182,6 +359,9 @@ function buildData(db: MetricsDB): DashboardData {
     topKbIds,
     verdicts,
     confidenceTrend,
+    verdictByFramework: buildVerdictByFramework(db),
+    confidenceTrendByFramework: buildConfidenceTrendByFramework(db),
+    frameworkQuality: buildFrameworkQuality(db),
   };
 }
 
