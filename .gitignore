@@ -20,3 +20,7 @@ playwright/.cache/
 
 # OS.
 Thumbs.db
+
+# Stage 2 transient artifacts (regenerated each run by migrate.yml).
+outputs/.snippets-inventory.md
+outputs/.lint-errors.md

@@ -102,7 +102,18 @@ inputs/bad-playwright/foo.spec.ts
    - A second PR labeled `migrator:code` with the generated files
 8. **Review the code PR.** The PR description shows aggregate confidence + which validation gates passed. Read the migration report — selector quality score, smell deltas, AST-diff non-trivial flag.
 9. Pull the branch locally. Run `npx playwright test outputs/tests/your-test.spec.ts` against your staging app. Verify it catches the same bug class as the source did.
-10. Merge or send back for regeneration with feedback.
+10. Merge or send back for regeneration with feedback (comment `/regenerate <feedback>` on the plan PR — see `regenerate-dispatch.yml`).
+
+### Optional: branch protection for hard verify gate
+
+`verify.yml` is configured to exit 1 on `START OVER` verdict (see `prompts/verify.md` for the 3-level ladder). This makes the workflow run show as a failed check on the code PR. To turn that failed check into a *hard block* on merge:
+
+1. Repo Settings → Branches → Add rule for `main`
+2. Enable **Require status checks to pass before merging**
+3. Add `verify` (or whatever the workflow name appears as after first run) to the required checks list
+4. Optional: also require `regression-test` and `Stage 2 — Generate Playwright code` for full pipeline gating
+
+Without this, START OVER verdicts only label the PR (`verify:start-over`); a reviewer can still click Merge. With it, the PR is blocked until the code is regenerated via `/regenerate` (which produces a new code PR with a fresh verify check).
 
 ## Repository structure
 
