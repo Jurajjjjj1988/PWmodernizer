@@ -129,12 +129,15 @@ jobs:
           for dir in examples/*/; do
             if [[ "$dir" == "examples/reference/" ]]; then continue; fi
             BASENAME=$(basename "$dir")
-            if ! ls "$dir"input.* >/dev/null 2>&1; then
-              echo "::error file=$dir::missing input.* file"
+            # input: either a single input.* file OR an input/ directory
+            # (multi-file examples like selenium-*-03-multifile-login).
+            if ! ls "$dir"input.* >/dev/null 2>&1 && [ ! -d "$dir"input ]; then
+              echo "::error file=$dir::missing input.* file or input/ directory"
               MISSING=$((MISSING + 1))
             fi
-            if ! ls "$dir"expected-output.* >/dev/null 2>&1; then
-              echo "::error file=$dir::missing expected-output.* file"
+            # expected-output: same shape (single file OR directory).
+            if ! ls "$dir"expected-output.* >/dev/null 2>&1 && [ ! -d "$dir"expected-output ]; then
+              echo "::error file=$dir::missing expected-output.* file or expected-output/ directory"
               MISSING=$((MISSING + 1))
             fi
             if [ ! -f "$dir"expected-plan.md ]; then
