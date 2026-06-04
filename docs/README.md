@@ -14,6 +14,7 @@
 | Doc | What it covers |
 |---|---|
 | [`troubleshooting.md`](troubleshooting.md) | Known failure modes + the exact fix. Updated when a real-world bug surfaces. |
+| [`baselines.md`](baselines.md) | Measured smoke + calibrate + per-validator wall-clock timings. Use to spot regressions. |
 
 ## Where things live (cross-reference)
 
