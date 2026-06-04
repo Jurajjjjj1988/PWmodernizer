@@ -1,7 +1,7 @@
 # Stage 1 — Migration planning.
 #
 # Trigger: push touching inputs/** OR manual workflow_dispatch.
-# Claude reads the input + config + reference style, follows prompts/analyze.md,
+# Claude reads the input + config + reference style, follows prompts/_assembled/analyze.md,
 # writes outputs/plans/<basename>.md. Opens PR labeled `migrator:plan`.
 # Stage 2 (migrate.yml) fires when the labeled PR is merged.
 
@@ -301,14 +301,16 @@ jobs:
           echo "Token prefix (first 12 chars): ${TRIMMED:0:12}..."
           claude --version || echo "(claude --version failed)"
 
-      # v0.5 follow-up: insert a `npm run assemble-prompts` step here to expand
-      # {{include:_fragments/*.md}} markers in prompts/ into prompts/_assembled/,
-      # then point the Claude step below at the assembled copy. Today
-      # (v0.4) only prompts/generate.md uses an include marker, and the file
-      # still works standalone because Claude reads the marker as plain text in
-      # the rare case the include target is unreachable. Once analyze.md and
-      # verify.md also adopt fragments, the assemble step becomes mandatory.
-      # See scripts/assemble-prompts.ts and prompts/_fragments/ for the design.
+      - name: Assemble prompt fragments
+        if: steps.dedup.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Expand {{include:_fragments/*.md}} markers in prompts/*.md into
+          # prompts/_assembled/*.md. Claude reads the assembled copy so it
+          # sees the resolved fragment content rather than the raw marker.
+          # All 3 prompts (analyze, generate, verify) now use includes.
+          npx tsx scripts/assemble-prompts.ts --write
 
       - name: Run Claude (analyze stage)
         if: steps.dedup.outputs.skip == 'false'
@@ -346,7 +348,7 @@ jobs:
 
           ## Your task
 
-          Read prompts/analyze.md — that's your full system prompt and task
+          Read prompts/_assembled/analyze.md — that's your full system prompt and task
           description. Follow it exactly.
 
           ## Input for this run
@@ -359,7 +361,7 @@ jobs:
 
           ## Context to load (in this order)
 
-          1. prompts/analyze.md — your task spec (READ FIRST)
+          1. prompts/_assembled/analyze.md — your task spec (READ FIRST)
           2. config/migration-rules.md — target style + structure contract
           3. config/knowledge-base.md — anti-pattern catalog + API translations
           4. examples/reference/company-style.spec.ts — style anchor
@@ -370,7 +372,7 @@ jobs:
           ONE markdown file at $OUTPUT_PATH. NO code generation. Follow the
           plan schema in config/migration-rules.md §9 — every section must
           be present. Mark each locator translation with HIGH / MED / LOW
-          confidence per prompts/analyze.md hallucination-defense rules.
+          confidence per prompts/_assembled/analyze.md hallucination-defense rules.
           EOF
           )
           claude \

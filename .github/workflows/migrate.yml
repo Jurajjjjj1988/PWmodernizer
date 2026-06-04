@@ -1,7 +1,7 @@
 # Stage 2 — Code generation.
 #
 # Trigger: a `migrator:plan` PR has been merged. Stage 2 reads the approved
-# plan + input + config + reference style, follows prompts/generate.md, and
+# plan + input + config + reference style, follows prompts/_assembled/generate.md, and
 # emits the Playwright TypeScript migration + migration report.
 #
 # Validation cascade: tsc -> eslint --fix -> playwright parse -> AST-diff
@@ -127,6 +127,14 @@ jobs:
           echo "has_envelope=true" >> "$GITHUB_OUTPUT"
         id: envelope
 
+      - name: Assemble prompt fragments
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Expand {{include:_fragments/*.md}} markers in prompts/*.md.
+          # Claude reads prompts/_assembled/generate.md (post-expansion).
+          npx tsx scripts/assemble-prompts.ts --write
+
       # ---------------------------------------------------------------------
       # Aider repo-map / Cody RAG pattern: before asking the model to generate
       # new code, hand it a compact inventory of POMs/fixtures/helpers that
@@ -236,7 +244,7 @@ jobs:
       # v0.5 follow-up: insert a `npm run assemble-prompts` step here to expand
       # {{include:_fragments/*.md}} markers in prompts/ into prompts/_assembled/,
       # then point the Claude step below at prompts/_assembled/generate.md
-      # instead of prompts/generate.md. Today (v0.4) generate.md is the only
+      # instead of prompts/_assembled/generate.md. Today (v0.4) generate.md is the only
       # prompt that uses an include marker (locator-priority fragment), and it
       # still works because the Claude session can resolve the bare prompt path.
       # Once analyze.md and verify.md adopt fragments, the assemble step
@@ -267,7 +275,7 @@ jobs:
 
           ## Your task
 
-          Read prompts/generate.md — that's your full system prompt. Follow
+          Read prompts/_assembled/generate.md — that's your full system prompt. Follow
           it exactly. The plan was already human-approved; execute it
           faithfully.
 
@@ -282,7 +290,7 @@ jobs:
 
           ## Context to load (in this order)
 
-          1. prompts/generate.md — your task spec (READ FIRST)
+          1. prompts/_assembled/generate.md — your task spec (READ FIRST)
           2. $PLAN_PATH — the approved plan; follow it literally
           3. config/migration-rules.md — style + structure contract
           4. config/knowledge-base.md — anti-pattern + API translations
