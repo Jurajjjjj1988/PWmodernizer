@@ -13,10 +13,11 @@ Two things to internalize before you start:
 
 ## Required reading (in order)
 
-1. **`outputs/plans/<input-basename>.md`** — the approved plan. Read it end-to-end. Note every locator translation row, every structural decision, every open question that was resolved.
-2. **The original input file** — at `inputs/<framework>/<name>/<file>`. You need this to preserve assertion behaviour and intent. **You are not migrating from the input — you are executing the plan against the input.**
-3. **`config/migration-rules.md`** — target conventions, locator priority, file structure, naming, formatting. Every rule applies.
-4. **`config/knowledge-base.md`** — referenced by the plan via KB-IDs. When a row in the anti-pattern catalog says "fix per KB-12", you may need to look up KB-12 for the canonical fix.
+1. **`outputs/plans/<input-basename>.md`** — the approved plan markdown. Read it end-to-end. Note every locator translation row, every structural decision, every open question that was resolved.
+2. **`outputs/plans/<input-basename>.envelope.json`** (if present) — the machine-validatable contract. Read it as a SECOND source of truth alongside the markdown. The envelope's `scenarios[].id` values are the authoritative test IDs — emit `// plan:scenario=<id>` comments on each generated `test(...)` block matching the envelope. The envelope's `requiredPOMs` and `requiredFixtures` lists are the authoritative file list — produce exactly those, no more. If markdown and envelope disagree on anything substantive, treat the envelope as canonical for machine-checked items (scenario IDs, file paths) and the markdown as canonical for human-reasoned items (reviewer notes, risk callouts).
+3. **The original input file** — at `inputs/<framework>/<name>/<file>`. You need this to preserve assertion behaviour and intent. **You are not migrating from the input — you are executing the plan against the input.**
+4. **`config/migration-rules.md`** — target conventions, locator priority, file structure, naming, formatting. Every rule applies.
+5. **`config/knowledge-base.md`** — referenced by the plan via KB-IDs. When a row in the anti-pattern catalog says "fix per KB-12", you may need to look up KB-12 for the canonical fix.
 
 If the plan file is missing or unreadable, **stop**. Emit `outputs/reports/<input-basename>.md` with body `BLOCKED: plan file missing at outputs/plans/<input-basename>.md` and exit. Do not attempt to regenerate the plan.
 

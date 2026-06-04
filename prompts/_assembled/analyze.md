@@ -21,14 +21,17 @@ If any of these files is missing, **stop and emit a plan that says "BLOCKED: mis
 
 ## Your task
 
-Produce **exactly one file**: `outputs/plans/<input-basename>.md`.
+Produce **two files** — a human-readable markdown plan AND a machine-validatable JSON envelope (LPW/Routine pattern):
+
+1. `outputs/plans/<input-basename>.md` — the markdown plan (this is the human-reviewable artefact)
+2. `outputs/plans/<input-basename>.envelope.json` — the JSON sidecar conforming to `scripts/plan-envelope.schema.json` (this is the machine contract Stage 2 reads)
 
 `<input-basename>` is the input filename without its source extension. Examples:
-- `inputs/cypress/login-flow/login.cy.js` → `outputs/plans/login.md`
-- `inputs/selenium-java/checkout/CheckoutTest.java` → `outputs/plans/CheckoutTest.md`
-- `inputs/selenium-python/modal/test_modal.py` → `outputs/plans/test_modal.md`
+- `inputs/cypress/login-flow/login.cy.js` → `outputs/plans/login.md` + `outputs/plans/login.envelope.json`
+- `inputs/selenium-java/checkout/CheckoutTest.java` → `outputs/plans/CheckoutTest.md` + `outputs/plans/CheckoutTest.envelope.json`
+- `inputs/selenium-python/modal/test_modal.py` → `outputs/plans/test_modal.md` + `outputs/plans/test_modal.envelope.json`
 
-The plan must follow the schema defined in `config/migration-rules.md` §9. Do not invent your own structure — use the schema exactly.
+The markdown plan must follow the schema defined in `config/migration-rules.md` §9. The JSON envelope must conform to `scripts/plan-envelope.schema.json` and stay consistent with the markdown (same scenarios, same locator table, same pins). See `examples/bad-playwright-01-flaky-waits/expected-plan.envelope.json` for the canonical worked example.
 
 **Do not emit code in this stage.** No `.ts` files, no Playwright snippets longer than a single locator example for illustration. Code generation is Stage 2's job. If you find yourself writing a `test(...)` block, stop — that is out of scope.
 
@@ -237,9 +240,10 @@ These will get your plan rejected on review:
 
 ## Output constraints
 
-- **Exactly one file**: `outputs/plans/<input-basename>.md`.
+- **Exactly two files**: `outputs/plans/<input-basename>.md` + `outputs/plans/<input-basename>.envelope.json`.
 - **No other files written.** Stage 2 is responsible for code, reports, and POM/fixture files. If you find yourself wanting to write `outputs/tests/...`, stop.
-- **Plain markdown.** GitHub-flavored. Tables for the catalog and translation table.
+- **Markdown plan**: GitHub-flavored. Tables for the catalog and translation table.
+- **JSON envelope**: conforms to `scripts/plan-envelope.schema.json` (Draft 2020-12). MUST stay consistent with the markdown — same scenarios, same locator table, same pins, same metrics. The envelope is the machine contract; Stage 2 reads it before reading the markdown.
 - **English.** Code identifiers stay as they are; commentary in English.
 
-When you are done, the final action in your transcript should be writing the plan file. Do not summarize the plan in chat after writing it — the file is the deliverable, the chat output is noise.
+When you are done, the final actions in your transcript should be writing the markdown plan and the envelope JSON. Do not summarize them in chat after writing — the files are the deliverables, the chat output is noise.

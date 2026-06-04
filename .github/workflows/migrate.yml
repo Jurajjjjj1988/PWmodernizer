@@ -110,6 +110,24 @@ jobs:
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Validate plan envelope (LPW/Routine contract)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          ENV="outputs/plans/${BASE}.envelope.json"
+          if [ ! -f "$ENV" ]; then
+            # v0.4 → v0.5 transition: envelope is optional. If absent, Stage 2
+            # proceeds in markdown-only mode (still works, just no machine
+            # contract). Promote to hard fail in v0.5 after enforcement.
+            echo "::warning::Envelope $ENV missing — Stage 2 runs in markdown-only mode."
+            echo "has_envelope=false" >> "$GITHUB_OUTPUT"
+          else
+            npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
+            echo "has_envelope=true" >> "$GITHUB_OUTPUT"
+          fi
+        id: envelope
+
       # ---------------------------------------------------------------------
       # Aider repo-map / Cody RAG pattern: before asking the model to generate
       # new code, hand it a compact inventory of POMs/fixtures/helpers that

@@ -266,6 +266,11 @@ jobs:
         if: steps.dedup.outputs.skip == 'false'
         with:
           node-version: '22'
+          cache: 'npm'
+
+      - name: Install project deps (envelope validator needs ts-morph + ajv)
+        if: steps.dedup.outputs.skip == 'false'
+        run: npm ci
 
       - name: Install Claude Code CLI
         if: steps.dedup.outputs.skip == 'false'
@@ -407,6 +412,23 @@ jobs:
             exit 1
           fi
           echo "Plan validated."
+
+      - name: Validate plan envelope JSON (LPW/Routine contract)
+        if: steps.dedup.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ steps.idempotency.outputs.input_basename }}"
+          ENV="outputs/plans/${BASE}.envelope.json"
+          if [ ! -f "$ENV" ]; then
+            # Soft gate during v0.4 → v0.5 transition: Claude may not yet be
+            # reliably emitting envelopes. Warn but don't block. Promote to
+            # hard fail in v0.5 after observing 5+ successful envelopes.
+            echo "::warning::Envelope $ENV not produced by Stage 1. Stage 2 will fall back to markdown-only mode."
+            exit 0
+          fi
+          # Schema validation via the canonical validator.
+          npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
 
       - name: Compute severity histogram
         id: histogram
