@@ -1,0 +1,129 @@
+{
+  "inputBasename": "EmployeesTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "search filters the employee grid to show matching rows @positive",
+      "userAction": "Type 'Jane' in the employee search box and observe the grid filter to rows whose name contains 'jane'.",
+      "expectedAssertions": [
+        "employee grid has at least one row visible after typing 'Jane'",
+        "first visible row's name cell contains 'jane' (case-insensitive)"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "inviting a new employee shows a confirmation toast @positive",
+      "userAction": "Click the Add/Invite button, enter 'new.hire@beacon.test' in the invite modal, submit, and observe a confirmation toast.",
+      "expectedAssertions": [
+        "invite modal dialog appears after clicking the Add button",
+        "confirmation toast with text 'Invitation sent' is visible after submitting the email"
+      ]
+    }
+  ],
+  "requiredPOMs": [
+    "outputs/tests/pages/employees.page.ts"
+  ],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "@FindBy(id = \"search-employees\")",
+      "target": "page.locator('#search-employees')",
+      "confidence": "high",
+      "notes": "Direct ID→CSS mapping per KB §6 Rule 1. Upgrade to getByLabel(/search/i) if DOM exposes a <label for='search-employees'>."
+    },
+    {
+      "original": "@FindBy(xpath = \"//header//button[contains(., 'Add')]\")",
+      "target": "page.getByRole('button', { name: /add/i })",
+      "confidence": "med",
+      "notes": "XPath targets <button> tag (semantic evidence) with 'Add' text. Exact accessible name unverified — Q3. See pin 1."
+    },
+    {
+      "original": "@FindBy(css = \".invite-modal .send-btn\")",
+      "target": "page.getByRole('dialog').getByRole('button', { name: /send|invite/i })",
+      "confidence": "low",
+      "notes": "CSS-class-only evidence. Modal role='dialog' and button name are guessed — Q4. See pin 2."
+    },
+    {
+      "original": "By.cssSelector(\".employees-grid .row\")",
+      "target": "page.locator('.employees-grid .row')",
+      "confidence": "med",
+      "notes": "Descriptive structural CSS selector. No accessible row name available. May degrade if class renamed — Q7. See pin 6."
+    },
+    {
+      "original": "By.cssSelector(\".employees-grid .row .name\").get(0)",
+      "target": "page.locator('.employees-grid .row .name').first()",
+      "confidence": "low",
+      "notes": "Positional first() retained. No accessible cell name evidence — Q7. See pin 3."
+    },
+    {
+      "original": "By.cssSelector(\".invite-modal input\").get(0)",
+      "target": "page.getByRole('dialog').getByRole('textbox')",
+      "confidence": "low",
+      "notes": "No label evidence for email input. Assumes single textbox in modal — Q5. See pin 4."
+    },
+    {
+      "original": "By.xpath(\"//div[contains(@class,'toast')]/span[2]\")",
+      "target": "page.getByRole('alert')",
+      "confidence": "low",
+      "notes": "Toast ARIA role unverified. span[2] positional index loses meaning; use toContainText rather than toHaveText until Q6 resolved — Q6. See pin 5."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Add/Invite header button",
+      "assumedLocator": "page.getByRole('button', { name: /add/i })",
+      "sourceLocator": "xpath=//header//button[contains(., 'Add')]",
+      "whyComment": "Q3 unresolved: accessible name of add-employee header button not confirmed — assumed /add/i covers all variants.",
+      "reviewerFallback": "Inspect header DOM, confirm element tag + full accessible name, then tighten the name regex or switch to exact string."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Send button inside invite modal",
+      "assumedLocator": "page.getByRole('dialog').getByRole('button', { name: /send|invite/i })",
+      "sourceLocator": ".invite-modal .send-btn",
+      "whyComment": "Q4 unresolved: modal role='dialog' and send-button accessible name not confirmed.",
+      "reviewerFallback": "Ask FE team to confirm ARIA role on modal wrapper and exact visible text on the send button. If modal lacks role='dialog', scope via page.locator('.invite-modal') instead."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "First employee row's name cell",
+      "assumedLocator": "page.locator('.employees-grid .row .name').first()",
+      "sourceLocator": ".employees-grid .row .name",
+      "whyComment": "Q7 unresolved: grid DOM structure (table vs div) not confirmed — positional first() retained as fallback.",
+      "reviewerFallback": "If grid is semantic <table> with <tr>/<td>, replace with page.getByRole('row').nth(1).getByRole('cell', { name: ... }) for a role-based upgrade."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Email input inside invite modal",
+      "assumedLocator": "page.getByRole('dialog').getByRole('textbox')",
+      "sourceLocator": ".invite-modal input",
+      "whyComment": "Q5 unresolved: email input label not confirmed — assumed single textbox in modal.",
+      "reviewerFallback": "If input has a visible label, use getByLabel(/email/i). If placeholder only, use getByPlaceholder(...). Both are more specific and survive modal refactors that add more inputs."
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Confirmation toast",
+      "assumedLocator": "page.getByRole('alert')",
+      "sourceLocator": "xpath=//div[contains(@class,'toast')]/span[2]",
+      "whyComment": "Q6 unresolved: toast ARIA role not confirmed. span[2] positional index dropped; toContainText used instead of toHaveText to tolerate icon spans.",
+      "reviewerFallback": "Ask FE team to add role='alert' (urgent) or role='status' (polite) to the toast component. If neither is feasible, fall back to page.locator('div.toast').filter({ hasText: /invitation sent/i })."
+    },
+    {
+      "pinId": 6,
+      "elementDescription": "Employee grid rows (for count assertion)",
+      "assumedLocator": "page.locator('.employees-grid .row')",
+      "sourceLocator": ".employees-grid .row",
+      "whyComment": "Q7 unresolved: grid DOM structure not confirmed — CSS class selector retained for count/filter assertions.",
+      "reviewerFallback": "If grid is a semantic <table>, use page.getByRole('row') filtered to exclude the header row (e.g., .filter({ hasNotText: /^name$/i }))."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.50,
+    "smellCountDelta": -23,
+    "locDelta": -56,
+    "antiPatternCoverage": "23/24"
+  }
+}
