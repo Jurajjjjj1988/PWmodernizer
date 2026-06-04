@@ -241,15 +241,11 @@ jobs:
           echo "Inventory written ($TOTAL files): $INV"
           echo "inventory_path=$INV" >> "$GITHUB_OUTPUT"
 
-      # v0.5 follow-up: insert a `npm run assemble-prompts` step here to expand
-      # {{include:_fragments/*.md}} markers in prompts/ into prompts/_assembled/,
-      # then point the Claude step below at prompts/_assembled/generate.md
-      # instead of prompts/_assembled/generate.md. Today (v0.4) generate.md is the only
-      # prompt that uses an include marker (locator-priority fragment), and it
-      # still works because the Claude session can resolve the bare prompt path.
-      # Once analyze.md and verify.md adopt fragments, the assemble step
-      # becomes mandatory. See scripts/assemble-prompts.ts and
-      # prompts/_fragments/ for the design.
+      # Note: Fragment assembly happens in the "Assemble prompt fragments" step
+      # above (commit 60c6b51). All 3 prompts (analyze, generate, verify) now
+      # contain {{include:_fragments/*.md}} markers and Claude reads the
+      # post-expansion copy from prompts/_assembled/. See
+      # scripts/assemble-prompts.ts and prompts/_fragments/ for the design.
 
       - name: Run Claude (generate stage)
         env:
