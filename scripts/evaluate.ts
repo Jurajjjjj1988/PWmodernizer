@@ -26,6 +26,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { parseArgs } from "node:util";
+import { MetricsDB } from "./metrics.js";
 
 interface Args {
   input: string;
@@ -424,10 +425,62 @@ function main(): void {
   mkdirSync(dirname(args["report-out"]), { recursive: true });
   writeFileSync(args["report-out"], renderReport(report));
 
+  // Persist metrics to SQLite for cross-run trend analysis (v1 ROADMAP
+  // "Metrics dashboard"). Wrapped in try/catch — the metrics DB is a local
+  // reporting cache, not a system of record, so a write failure must not
+  // fail the migration workflow. See scripts/metrics.ts for schema.
+  try {
+    const sourceFramework = parseSourceFrameworkFromPlan(planMd);
+    const subtractive = sourceFramework === "bad-playwright";
+    const sourceSmellTotal = Object.values(report.source).reduce((a, b) => a + b, 0);
+    const outputSmellTotal = Object.values(report.outputSmells).reduce((a, b) => a + b, 0);
+    const smellRemovalRate = sourceSmellTotal === 0
+      ? 1
+      : Math.max(0, (sourceSmellTotal - outputSmellTotal) / sourceSmellTotal);
+    const forbiddenAbsence = report.forbidden.length === 0 ? 1 : 0;
+    const dbPath = process.env["METRICS_DB"] ?? "outputs/.metrics.db";
+    const commitSha = process.env["GITHUB_SHA"] ?? "local";
+    const metricsDB = new MetricsDB(dbPath);
+    try {
+      metricsDB.recordMigration({
+        input_basename: basename(args.input),
+        source_framework: sourceFramework,
+        subtractive,
+        aggregate_confidence: computeAggregateConfidence(report),
+        selector_quality_score: report.selectorQuality,
+        web_first_rate: report.webFirstRate,
+        plan_confidence_aggregate: report.confidence.aggregate,
+        smell_removal_rate: smellRemovalRate,
+        forbidden_absence: forbiddenAbsence,
+        commit_sha: commitSha,
+      });
+    } finally {
+      metricsDB.close();
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`::warning::evaluate: metrics persistence failed (non-fatal): ${msg}\n`);
+  }
+
   // Aggregate confidence to stdout — workflow consumes this. Uses the same
   // formula as the rendered report (computeAggregateConfidence) so the
   // workflow-routed value cannot drift from the human-readable report.
   process.stdout.write(computeAggregateConfidence(report).toFixed(2));
+}
+
+/**
+ * Parse the source framework label from a plan markdown body. Mirrors
+ * scripts/derive-envelope.ts:parseSourceFramework — kept local to avoid
+ * importing from a script that itself imports ts-morph (heavy dep on a
+ * lightweight metrics write).
+ */
+function parseSourceFrameworkFromPlan(planMd: string): string {
+  const lowered = planMd.toLowerCase();
+  if (lowered.includes("bad-playwright")) return "bad-playwright";
+  if (lowered.includes("selenium-java") || lowered.includes("selenium java")) return "selenium-java";
+  if (lowered.includes("selenium-python") || lowered.includes("selenium python")) return "selenium-python";
+  if (lowered.includes("cypress")) return "cypress";
+  return "unknown";
 }
 
 main();
