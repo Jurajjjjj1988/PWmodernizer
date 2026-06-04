@@ -16,6 +16,7 @@
 | [`walkthrough.md`](walkthrough.md) | End-to-end walkthrough of a real migration using PR #3 as the running example. |
 | [`troubleshooting.md`](troubleshooting.md) | Known failure modes + the exact fix. Updated when a real-world bug surfaces. |
 | [`baselines.md`](baselines.md) | Measured smoke + calibrate + per-validator wall-clock timings. Use to spot regressions. |
+| [`dom-ground-public-suts.md`](dom-ground-public-suts.md) | Curated catalog of public demo sites for Phase 7c calibration. |
 
 ## Where things live (cross-reference)
 
