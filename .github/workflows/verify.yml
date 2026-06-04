@@ -104,6 +104,34 @@ jobs:
             --permission-mode acceptEdits \
             "$PROMPT"
 
+      - name: Verify report secret scan (mirror Stage 0)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Opus may quote source-test fragments that contain credentials
+          # (especially when discussing what was migrated). Mirror the input
+          # + Stage 2 output secret-scan patterns. Warn but don't block —
+          # the verify report is informational, not a final artifact.
+          REPORT="outputs/reports/${{ inputs.input_basename }}-verify.md"
+          if [ ! -f "$REPORT" ]; then exit 0; fi
+          declare -a PATTERNS=(
+            'AKIA[0-9A-Z]{16}|AWS access key'
+            'sk_live_[0-9a-zA-Z]{24,}|Stripe live secret key'
+            'pk_live_[0-9a-zA-Z]{24,}|Stripe live publishable key'
+            'ghp_[A-Za-z0-9]{36}|GitHub PAT'
+            'github_pat_[A-Za-z0-9_]{82}|GitHub fine-grained PAT'
+            'xox[abprs]-[A-Za-z0-9-]{10,}|Slack token'
+            'sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{90,}|Anthropic API key'
+            'sk-proj-[A-Za-z0-9_-]{40,}|OpenAI project key'
+          )
+          for entry in "${PATTERNS[@]}"; do
+            PAT="${entry%|*}"
+            LABEL="${entry#*|}"
+            if grep -qnE "$PAT" "$REPORT"; then
+              echo "::warning file=$REPORT::Verifier emitted possible $LABEL — Opus may have quoted source verbatim. Review before merging the code PR."
+            fi
+          done
+
       - name: Comment verify findings on code PR
         env:
           GH_TOKEN: ${{ github.token }}
