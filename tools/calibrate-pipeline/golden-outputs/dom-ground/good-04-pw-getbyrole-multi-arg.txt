@@ -1,0 +1,5 @@
+# good-04-pw-getbyrole-multi-arg: 3 getByRole calls with multi-arg options ({name, exact}), mock://always-resolve, expect exit 0
+dom-ground: 3 locator(s) probed
+resolved-unique: 3
+resolved-multiple: 0
+not-found: 0

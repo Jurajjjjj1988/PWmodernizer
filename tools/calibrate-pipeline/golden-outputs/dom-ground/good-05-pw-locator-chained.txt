@@ -1,0 +1,5 @@
+# good-05-pw-locator-chained: getByRole('row').filter().getByRole('button') chain — parser picks up 3 locator calls (filter is not a locator method); mock://always-resolve; expect exit 0
+dom-ground: 3 locator(s) probed
+resolved-unique: 3
+resolved-multiple: 0
+not-found: 0

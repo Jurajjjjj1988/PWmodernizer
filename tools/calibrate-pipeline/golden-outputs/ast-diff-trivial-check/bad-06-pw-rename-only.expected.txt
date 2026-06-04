@@ -1,0 +1,2 @@
+# Exit 1. Only identifiers/strings renamed (page->tab, search->query, etc.); normalised AST is identical.
+rename-only / cosmetic

@@ -35,6 +35,10 @@ locally without firing CI.
 | `test-markers-in-comments-only.spec.ts` | ~1.2KB | PASS | FIXME (known gap): `test(` lives only in `/* */` block comment; marker regex doesn't strip comments |
 | `near-token-limit.spec.ts` | ~99.3KB | PASS | ~24,820 estimated tokens — just below the 25,000 cap; proves the threshold isn't off-by-one |
 | `unicode-emoji-test.spec.ts` | ~1.4KB | PASS | emoji in test descriptions and assertions; supplementary-plane 4-byte UTF-8 |
+| `pw-deeply-nested-describe.spec.ts` | ~1.6KB | PASS | 8 levels of `test.describe` nesting; Stage 0 has no nesting-depth heuristic. Stage 1 should WARN via KB-1.1.15 (`Unnecessary test.describe nesting`). |
+| `pw-no-tests-only-describe.spec.ts` | ~1.5KB | PASS | FIXME (known gap): `test.describe('foo', () => {})` with NO `test()` inside still PASSES because marker regex matches `test` and `describe` as words. Parallel to `test-markers-in-comments-only.spec.ts`. |
+| `sel-java-no-test-annotation.java` | ~1.6KB | REJECT | Java helper class with no `@Test` annotation and no `test`/`it`/`describe`/`page.` tokens; marker gate rejects. |
+| `sel-py-pytest-skip-all.py` | ~2.9KB | PASS | Every `def test_*` decorated with `@pytest.mark.skip`. Markers present so Stage 0 lets it through. Stage 1 should WARN — universal skip = non-mergeable per analogue of KB-1.1.8. |
 
 **Note on `bom-encoded.ts`:** `file --mime-encoding -b` on Ubuntu / macOS
 returns `utf-8` for a UTF-8 BOM-prefixed file (BOM is part of the UTF-8
@@ -76,6 +80,10 @@ Expected step-summary errors / warnings per fixture:
 - `near-token-limit.spec.ts` → no errors, no warnings (~24,820 tokens)
 - `unicode-emoji-test.spec.ts` → no errors, no warnings
 - `with-real-aws-key.spec.ts` → `::warning::Possible real AWS access key detected`
+- `pw-deeply-nested-describe.spec.ts` → no Stage 0 errors; Stage 1 expected to flag KB-1.1.15
+- `pw-no-tests-only-describe.spec.ts` → no Stage 0 errors (FIXME — see note)
+- `sel-java-no-test-annotation.java` → `::error::Input contains no test markers`
+- `sel-py-pytest-skip-all.py` → no Stage 0 errors; Stage 1 expected to flag universal-skip
 
 **Note on `test-markers-in-comments-only.spec.ts`:** Stage 0's marker
 regex `\b(test|it|describe|@Test|...)\b` does NOT strip comments before
@@ -83,6 +91,13 @@ matching, so a file with `test(` only inside a `/* */` block comment
 currently PASSES the marker gate even though no executable test code
 exists. This is a known gap — the fixture acts as a surface marker so
 the regression is visible. Fix would be AST-aware comment stripping.
+
+**Note on `pw-no-tests-only-describe.spec.ts`:** Same root cause as the
+comments-only gap. A file containing `test.describe('foo', () => {})`
+without any inner `test()` call still passes the marker regex because
+`test` and `describe` match as standalone words inside `test.describe`.
+The regex is lexical, not structural. Fix would be the same AST-aware
+upgrade.
 
 ## Local validation
 
@@ -96,7 +111,7 @@ npx tsx scripts/test-stage0.ts
 It applies the same checks Stage 0 does and prints a table:
 `file | size | encoding | markers | tokens | verdict | reason`.
 
-Current expected totals: **PASS=7  REJECT=4  WARN=4  (15 fixtures total)**.
+Current expected totals: **PASS=10  REJECT=5  WARN=4  (19 fixtures total)**.
 
 The script also validates each fixture against a pinned expected verdict
 in `EXPECTED_VERDICTS` and exits non-zero on any mismatch — so this

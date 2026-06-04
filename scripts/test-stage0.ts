@@ -62,6 +62,16 @@ const EXPECTED_VERDICTS: Record<string, 'PASS' | 'REJECT' | 'WARN'> = {
   'test-markers-in-comments-only.spec.ts': 'PASS',
   'near-token-limit.spec.ts': 'PASS',
   'unicode-emoji-test.spec.ts': 'PASS',
+  // Language-specific adversarial inputs (PW + Selenium calibration deepening).
+  // `pw-no-tests-only-describe.spec.ts` PASSES because Stage 0's marker regex
+  // matches the substrings `test` and `describe` inside `test.describe(...)`
+  // even when no test() call exists — same FIXME pattern as
+  // `test-markers-in-comments-only.spec.ts`. Stage 1 Claude review should
+  // catch the empty-describe and emit a WARN (no executable tests).
+  'pw-deeply-nested-describe.spec.ts': 'PASS',
+  'pw-no-tests-only-describe.spec.ts': 'PASS',
+  'sel-java-no-test-annotation.java': 'REJECT',
+  'sel-py-pytest-skip-all.py': 'PASS',
 };
 
 function parseArgs(argv: string[]): { dir: string } {

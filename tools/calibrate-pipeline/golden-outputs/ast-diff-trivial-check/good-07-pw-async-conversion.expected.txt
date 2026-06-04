@@ -1,0 +1,3 @@
+# Exit 0. Callback-chain shape (.then().catch()) collapsed into async/await + getByRole/Label — structurally distinct.
+[ts-morph]
+substantively non-trivial

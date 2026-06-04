@@ -1,0 +1,3 @@
+# Exit 0. Java PageFactory class refactored into a Playwright POM (Locator/expect, async methods) — different shape.
+[tree-sitter-java]
+substantively non-trivial

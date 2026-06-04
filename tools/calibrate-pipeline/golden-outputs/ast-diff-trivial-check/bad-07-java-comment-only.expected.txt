@@ -1,0 +1,3 @@
+# Exit 1. Only Javadoc/line comments added; code shape and identifiers identical.
+[tree-sitter-java]
+rename-only / cosmetic
