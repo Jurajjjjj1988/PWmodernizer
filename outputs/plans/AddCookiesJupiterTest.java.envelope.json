@@ -1,0 +1,48 @@
+{
+  "inputBasename": "AddCookiesJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "adds a cookie and verifies it appears on the page after refresh @positive",
+      "userAction": "Navigate to the cookies demo page, add a cookie named 'new-cookie-key' via the browser context API, verify the cookie is stored, then click 'Refresh cookies' and confirm the new cookie is visible on the page.",
+      "expectedAssertions": [
+        "context.cookies() returns a cookie named 'new-cookie-key' with value 'new-cookie-value' after addCookies() (secondary API-level assertion)",
+        "after clicking 'Refresh cookies', the page visibly displays 'new-cookie-key' in the rendered cookie list (new assertion required — not present in source)"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "By.id(\"refresh-cookies\")",
+      "target": "page.locator('#refresh-cookies')",
+      "confidence": "high",
+      "notes": "Mechanical By.id → CSS-ID translation per KB §6 Rule 1. Do NOT promote to getByRole without DOM evidence. If reviewer confirms <button> with accessible name 'Refresh cookies', upgrade to page.getByRole('button', { name: /refresh cookies/i })."
+    },
+    {
+      "original": "[new — post-click assertion; no source locator equivalent]",
+      "target": "page.getByText('new-cookie-key')",
+      "confidence": "low",
+      "notes": "New assertion required by migration-rules.md §2 (every test must end with an observable-outcome assertion). The source ends on an unasserted click. DOM structure of cookies.html is unknown without inspection. See pin 1 and Q3, Q5 in the markdown plan."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Cookie display element — new post-click assertion for visible 'new-cookie-key'",
+      "assumedLocator": "page.getByText('new-cookie-key')",
+      "sourceLocator": "[none — new assertion; no DOM locator in source]",
+      "whyComment": "Q5 unresolved: DOM structure of cookies.html not confirmed; assumed cookie name appears as visible text after clicking Refresh.",
+      "reviewerFallback": "Open https://bonigarcia.dev/selenium-webdriver-java/cookies.html, click 'Refresh cookies', inspect the element rendering the new cookie name, then replace with the appropriate role/testid locator (e.g. getByRole('cell', { name: 'new-cookie-key' }) if it is a table)."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.5,
+    "smellCountDelta": -7,
+    "locDelta": -35,
+    "antiPatternCoverage": "7/7"
+  }
+}
