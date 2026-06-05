@@ -222,8 +222,21 @@ function parseAntiPatterns(body: string): AntiPatternRow[] {
   const out: AntiPatternRow[] = [];
   for (const row of rows) {
     const sevCell = row.find((c) => SEVERITY_CELL.test(c.trim()));
-    if (!sevCell) continue; // not an anti-pattern row
+    if (!sevCell) continue;
     out.push({ severity: normaliseSeverity(sevCell), kbId: findKbIdInRow(row) });
+  }
+  if (out.length > 0) return out;
+  // Fallback: legacy example format uses `- [x] <description> KB-N.N.N`
+  // checkbox lists instead of markdown tables. One `- [x]` = one anti-pattern.
+  // Severity not encoded → default to "M" (medium) which matches the
+  // canonical Stage 1 table convention for unspecified rows.
+  const checkboxRe = /^[\s-]*\[\s*[xX]\s*\]\s+(.+)$/;
+  for (const line of body.split("\n")) {
+    const m = checkboxRe.exec(line);
+    if (!m?.[1]) continue;
+    const inline = m[1];
+    const kbMatch = /KB-(\d+\.\d+\.\d+|UNCLASSIFIED)|((?:pw|cy|sel)\/[a-z0-9-]+\/[a-z0-9-]+)/i.exec(inline);
+    out.push({ severity: "M", kbId: kbMatch ? (kbMatch[1] ?? kbMatch[2] ?? null) : null });
   }
   return out;
 }
