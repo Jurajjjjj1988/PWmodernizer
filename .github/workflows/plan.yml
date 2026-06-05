@@ -175,7 +175,7 @@ jobs:
                 ;;
             esac
             # Min-content heuristic: must look like a test file somewhere in the unit.
-            if grep -qE '\b(test|it|describe|@Test|def test_|cy\.|page\.)\b' "$FILE"; then
+            if grep -qE '(\b(test|it|describe|def test_|cy\.|page\.)\b)|@Test\b' "$FILE"; then
               HAS_TEST_MARKER=1
             fi
           done
