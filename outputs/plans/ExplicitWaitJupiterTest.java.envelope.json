@@ -1,0 +1,33 @@
+{
+  "inputBasename": "ExplicitWaitJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "displays landscape image with correct src after async load @positive @e2e",
+      "userAction": "Navigate to the loading-images demo page; wait for the landscape photograph element to appear and assert its src attribute contains 'landscape' (case-insensitive).",
+      "expectedAssertions": [
+        "img#landscape is present in the document after page navigation",
+        "img#landscape src attribute value matches /landscape/i"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "By.id(\"landscape\")",
+      "target": "page.locator('#landscape')",
+      "confidence": "high",
+      "notes": "Mechanical By.id translation. If the reviewer confirms <img id='landscape' alt='...'> carries a 'landscape'-containing alt attribute (Q1), upgrade to page.getByAltText(/landscape/i) for 1.0 selector quality score."
+    }
+  ],
+  "hallucinationDefensePins": [],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.0,
+    "smellCountDelta": -6,
+    "locDelta": -35,
+    "antiPatternCoverage": "6/6"
+  }
+}
