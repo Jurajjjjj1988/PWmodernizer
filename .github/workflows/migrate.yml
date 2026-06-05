@@ -545,10 +545,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Sonnet may rename input basename on cross-language (Java→TS).
+          # Locate the actual generated spec inside outputs/tests/.
+          OUT_SPEC=$(find outputs/tests -maxdepth 2 -name '*.spec.ts' | head -1)
           CONFIDENCE=$(npx tsx scripts/evaluate.ts \
             --input "${{ needs.guard.outputs.input_path }}" \
             --plan "${{ needs.guard.outputs.plan_path }}" \
-            --output "outputs/tests/${{ needs.guard.outputs.input_basename }}" \
+            --output "$OUT_SPEC" \
             --report-out "outputs/reports/${{ needs.guard.outputs.input_basename }}.md")
           echo "confidence=$CONFIDENCE" >> "$GITHUB_OUTPUT"
           echo "Migration confidence: $CONFIDENCE"
