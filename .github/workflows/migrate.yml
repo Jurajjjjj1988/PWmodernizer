@@ -420,9 +420,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Pass output as DIRECTORY — resolveSourceFile picks the .spec.ts inside.
+          # Stem-match (commit 041c342) only works for stem-preserving renames;
+          # Sonnet may pick a different stem (e.g., EmployeesTest.java →
+          # employees.spec.ts) so directory mode is the robust choice.
           npx tsx scripts/ast-diff-trivial-check.ts \
             --input "${{ needs.guard.outputs.input_path }}" \
-            --output "outputs/tests/${{ needs.guard.outputs.input_basename }}"
+            --output "outputs/tests"
 
       - name: Plan-vs-code coverage check (LPW contract closure — unified envelope --code mode)
         shell: bash
