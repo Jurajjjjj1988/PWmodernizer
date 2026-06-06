@@ -2,31 +2,41 @@
 
 ## Source framework
 
-**Selenium Java** — JUnit 5 (Jupiter) test runner, `io.github.bonigarcia.wdm.WebDriverManager` for
-browser provisioning, `org.openqa.selenium.support.ui.FluentWait` + `ExpectedConditions` for explicit
-waits, AssertJ (`assertThat`) for assertions, Selenium WebDriver 4.x API implied by `Duration`-based
-timeout overloads. Single-file input (no sibling POM or helper classes).
+selenium-java — JUnit 5 (Jupiter) + `io.github.bonigarcia.wdm.WebDriverManager` + AssertJ +
+`org.openqa.selenium.support.ui.FluentWait` / `ExpectedConditions`. Single-file input; no sibling
+POM or helper classes. Framework translation required (not subtractive).
 
 ## Summary
 
-The test navigates to Boni Garcia's public `loading-images.html` demo page, which renders four images
-asynchronously. It uses a `FluentWait` to poll until the element `id="landscape"` appears in the DOM,
-then asserts that the element's resolved `src` property contains the substring "landscape"
-(case-insensitive). The migration replaces the entire FluentWait/ExpectedConditions ceremony with
-Playwright's built-in auto-retry, collapses the two-step wait+assert into a single web-first
-`toHaveAttribute` call, and moves the hardcoded URL into `playwright.config.ts`.
+The test navigates to Boni Garcia's public `loading-images.html` demo page, which renders four
+browser images asynchronously after the initial HTML is parsed. The source uses a `FluentWait` to
+poll (10 s ceiling, 1 s interval, ignoring `NoSuchElementException`) until `<img id="landscape">`
+appears in the DOM, then makes a one-shot AssertJ assertion that the element's `src` DOM property
+contains "landscape" (case-insensitive). The migration must: (1) drop the entire
+WebDriverManager / FluentWait / ExpectedConditions ceremony, (2) move the absolute URL to
+`playwright.config.ts` as `baseURL`, and (3) collapse the two-step wait-then-assert into a single
+web-first `toHaveAttribute` call that auto-retries element presence and attribute resolution
+together. No POM, no fixture, no file split.
 
 ### What bug does this catch?
 
-Catches a regression where the landscape image on the loading-images page fails to materialise in the
-DOM (or receives a `src` that no longer references a landscape resource) within the configured timeout.
+Catches a regression where the landscape image fails to load on the loading-images demo page — the
+image element is absent from the DOM or its `src` attribute does not contain "landscape" after up
+to 10 seconds of polling.
 
 ### User-perceivable assertion checklist
 
-- [ ] After page load: element `#landscape` is present in the DOM (was waiting for
-  `EC.presenceOfElementLocated`)
-- [ ] After page load: that element's `src` attribute contains the substring `"landscape"`
-  (case-insensitive)
+- [ ] After `page.goto('/selenium-webdriver-java/loading-images.html')`: the landscape image
+  element is reachable and attached to the DOM
+- [ ] After the image loads: the element's `src` attribute value contains "landscape"
+  (case-insensitive, matched by `/landscape/i`)
+
+**Implementation note for Stage 2 (mandatory):** a single
+`await expect(locator).toHaveAttribute('src', /landscape/i, { timeout: 10_000 })` satisfies both
+checklist items — Playwright auto-waits for element attachment AND for the attribute to match
+before the assertion resolves. Do **not** add a separate `toBeAttached()` or `toBeVisible()` call
+before this assertion; it is redundant and adds an unnecessary sync barrier. Do **not** silently
+drop either checklist item.
 
 ---
 
@@ -34,24 +44,23 @@ DOM (or receives a `src` that no longer references a landscape resource) within 
 
 | Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
 |---|---|---|---|---|---|
-| H | 41 | KB-1.4.20 | Browser installer executed in test setup | `WebDriverManager.chromedriver().create()` | Drop entirely; Playwright bundles browsers via `npx playwright install` — no installer code in tests |
-| H | 52–53 | KB-1.4.12 | Hardcoded environment URL | `driver.get("https://bonigarcia.dev/…")` | Move base origin to `playwright.config.ts` `baseURL`; use relative path in `page.goto()` |
-| H | 54–57 | KB-1.3.4 | WebDriverWait/FluentWait boilerplate per element | `new FluentWait<>(driver).withTimeout(…)` | Drop; Playwright actions and `expect()` auto-wait for actionability/visibility |
-| H | 59–60 | KB-1.3.15 | `ExpectedConditions` ceremony wrapping every wait | `wait.until(EC.presenceOfElementLocated(…))` | `await expect(locator).toBeAttached()` or fold into `toHaveAttribute` auto-wait |
-| M | 46 | KB-1.3.12 | Manual `driver.quit()` in `@AfterEach` teardown | `driver.quit()` | Drop; Playwright tears down the `page` fixture per test automatically |
-| M | 61–62 | KB-1.3.10 | Synchronous one-shot DOM-property assertion | `assertThat(landscape.getDomProperty("src"))` | `await expect(locator).toHaveAttribute('src', /landscape/i)` — auto-retrying, polled |
-| L | 55–56 | KB-1.1.9 | Magic numbers (timeout and polling interval) | `.withTimeout(Duration.ofSeconds(10))` | Remove; set `expect: { timeout: 10_000 }` in `playwright.config.ts` if the default 5 s is too tight |
+| H | 42–43 | KB-UNCLASSIFIED | Java WebDriverManager auto-installer in `@BeforeEach` | `WebDriverManager.chromedriver().create()` | Drop entirely; Playwright manages its own browser binaries via `npx playwright install` — no installer code in any test or setup file |
+| H | 52–53 | KB-1.1.14 | Hardcoded absolute URL | `driver.get("https://bonigarcia.dev/…")` | Set `baseURL: process.env.BASE_URL ?? 'https://bonigarcia.dev'` in `playwright.config.ts`; emit `await page.goto('/selenium-webdriver-java/loading-images.html')` |
+| H | 54–57 | KB-1.3.4 | `FluentWait` / `WebDriverWait` boilerplate per element | `new FluentWait<>(driver).withTimeout(…)` | Drop entirely; Playwright `expect()` auto-waits and retries without any ceremony |
+| H | 59–60 | KB-1.3.15 | `ExpectedConditions` ceremony | `wait.until(EC.presenceOfElementLocated(…))` | Drop; fold into `await expect(locator).toHaveAttribute('src', /landscape/i, { timeout: 10_000 })` — one call replaces the entire wait+assert chain |
+| M | 61–62 | KB-1.3.10 | Sync one-shot DOM-property assertion (no retry) | `assertThat(landscape.getDomProperty("src"))` | Replace with `await expect(locator).toHaveAttribute('src', /landscape/i, { timeout: 10_000 })` — auto-retrying web-first assertion |
+| L | 47 | KB-1.3.12 | `driver.quit()` in `@AfterEach` | `driver.quit()` | Drop; Playwright's `page` fixture closes context automatically after each test |
+| L | 55–56 | KB-1.1.9 | Magic duration literals | `Duration.ofSeconds(10)` / `Duration.ofSeconds(1)` | Translate 10 s → `{ timeout: 10_000 }` per-call override; polling interval is implicit in Playwright's retry loop (no equivalent needed) |
 
-### Notes on KB cross-framework citations
+### Unclassified smells
 
-- **KB-1.4.20** is catalogued under Selenium Python (`webdriver_manager`); used here as the exact
-  Java analog (`WebDriverManager.chromedriver().create()`). The rationale is identical: network
-  call on every test run = flake source unrelated to the SUT.
-- **KB-1.4.12** is catalogued under Selenium Python (`driver.get(url)` hardcoded); used here for
-  the Java `driver.get(url)` call. Identical bug class.
-- **KB-1.3.10** is catalogued under Java (`assertTrue(driver.getCurrentUrl().contains(…))`);
-  applied here to element-property assertion (`getDomProperty("src")`) — same bug class: one-shot
-  snapshot, no auto-retry.
+**`WebDriverManager.chromedriver().create()` (lines 42–43)** — Java equivalent of Python's
+`webdriver_manager` auto-installer (KB-1.4.20 covers the Python variant; no Java-specific KB-1.3.x
+entry exists for this pattern). The library downloads and caches ChromeDriver at runtime via HTTP,
+coupling test startup to `chromedriver.storage.googleapis.com` availability. Playwright separates
+browser provisioning (`npx playwright install`, run once in CI setup) from test execution,
+eliminating the network call entirely. Severity: H. Reviewer: confirm whether KB-1.3.x should
+receive a new entry for Java WebDriverManager; until then cite as KB-UNCLASSIFIED.
 
 ---
 
@@ -59,165 +68,177 @@ DOM (or receives a `src` that no longer references a landscape resource) within 
 
 | Original | New | Confidence | Notes |
 |---|---|---|---|
-| `By.id("landscape")` (line 59–60) | `page.getByAltText(/landscape/i)` | med | Element id and page context (loading-images educational demo, bonigarcia) strongly suggest `<img alt="landscape">`. Educational demos from this author consistently use descriptive alt text matching the resource name. Fallback: `page.locator('#landscape')` (HIGH confidence mechanical translation per KB hallucination rule 1: `By.id("x")` → `page.locator("#x")`) if alt text does not match. |
+| `By.id("landscape")` (lines 59–60) | `page.getByRole("img", { name: /landscape/i })` | med | An `<img>` element's ARIA role is `img`; its computed accessible name is its `alt` attribute. `getByRole("img", { name: /landscape/i })` is tier-1 and functionally equivalent to `getByAltText(/landscape/i)` for images. Evidence: element ID and Java variable both named "landscape" strongly suggest `alt="landscape"` by naming convention; bonigarcia educational demos consistently use descriptive alt text. Unconfirmed from source code alone — see Q3 and pin 1. Fallback: `page.locator('#landscape')` (HIGH — direct mechanical translation of `By.id("landscape")`) if alt text is absent or does not match `/landscape/i`. |
 
 ---
 
 ## Hallucination-defense pins
 
-1. **landscape image element** — assumed `page.getByAltText(/landscape/i)`. If DOM contradicts
-   (alt text is absent or differs from "landscape"): keep `page.locator('#landscape')`, add
-   WHY-comment `'Q3 unresolved — alt text not confirmed'`. Reviewer fallback: inspect
-   `https://bonigarcia.dev/selenium-webdriver-java/loading-images.html` source; if `<img>` has
-   `alt="landscape"` confirm and use `getByAltText`; if alt is missing or different, use
-   `locator('#landscape')` with an inline comment explaining why nothing higher in the hierarchy
-   works (migration-rules §5).
+1. **Landscape image element** — assumed `page.getByRole("img", { name: /landscape/i })`. If DOM
+   contradicts (the `<img id="landscape">` element has no `alt` attribute, or its `alt` does not
+   match `/landscape/i`): keep `page.locator('#landscape')`, add the **verbatim** WHY-comment
+   `'Q3 unresolved — alt text not confirmed'`. Reviewer fallback: open
+   `https://bonigarcia.dev/selenium-webdriver-java/loading-images.html` in browser DevTools,
+   inspect `<img id="landscape">`, confirm presence and value of `alt`. If `alt` contains
+   "landscape" → use `getByRole("img", { name: /landscape/i })`; if absent or different → use
+   `locator('#landscape')` with the verbatim WHY-comment above.
+
+   **Stage 2 contract:** any silent promotion of the MED-confidence locator when Q3 has not been
+   confirmed by reviewer DOM inspection is a **block-severity** hallucination failure on
+   regeneration. Stage 2 must not emit `getByRole("img", { name: /landscape/i })` without the
+   reviewer having resolved Q3 affirmatively.
 
 ---
 
 ## Structural changes
 
-### Per-file fate (selenium-multifile-rules)
+**Output filename:** `fluent-wait-jupiter.spec.ts` (kebab-case per `migration-rules.md` §1)
+**Output path:** `outputs/tests/fluent-wait-jupiter.spec.ts`
 
-Single-file input — no directory structure.
+### Per-file fate
+
+Single-file input — no directory to decompose.
 
 | Source construct | Fate | Target |
 |---|---|---|
-| `FluentWaitJupiterTest.java` (test class) | **KEPT and RESHAPED** | `outputs/tests/fluent-wait-jupiter.spec.ts` |
-| `@BeforeEach setup()` with `WebDriverManager` | **DROPPED** | Replaced by Playwright `page` fixture (auto-provisioned) |
-| `@AfterEach teardown()` with `driver.quit()` | **DROPPED** | Playwright auto-teardown; no target |
-| `Wait<WebDriver>` / `FluentWait` / `ExpectedConditions` | **DROPPED** | Playwright auto-wait via `expect()` matchers |
+| `FluentWaitJupiterTest.java` (entire class) | KEPT and RESHAPED | `outputs/tests/fluent-wait-jupiter.spec.ts` |
+| `@BeforeEach setup()` — WebDriverManager + driver init | DROPPED | No equivalent needed; Playwright's `page` fixture provides a fresh `BrowserContext` per test |
+| `@AfterEach teardown()` — `driver.quit()` | DROPPED | Playwright auto-disposes the context per test (KB-1.3.12) |
+| `FluentWait` / `ExpectedConditions` / `Wait<WebDriver>` | DROPPED | Replaced by `expect(locator).toHaveAttribute(…)` auto-retry |
 
-### Structural decisions
+### Other structural decisions
 
-- **Extract POM:** no — single test, single locator, well under the 200-LOC threshold
-  (migration-rules §1 "When to add a new POM"). Inlining is the correct default.
-- **Extract fixture:** no — setup is trivial (`page.goto(relative-path)`); no auth, no network
-  mocking, no seeding. One `page.goto()` in `beforeEach` is within the ≤3-line rule
-  (migration-rules §2 "`test.beforeEach` discipline").
+- **Extract POM:** no — single page, single locator, estimated target ~20 LOC; well below the
+  200-LOC extraction threshold in `migration-rules.md` §1.
+- **Extract fixture:** no — setup is a single `await page.goto(…)`; no auth, no mocking, no
+  seeding. One-line `test.beforeEach` is within the ≤3-line rule.
 - **Split file:** no — single test case.
-- **Output filename:** `fluent-wait-jupiter.spec.ts` — kebab-case from `FluentWaitJupiterTest`
-  per migration-rules §1 "File naming".
-- **Import style:** `import { test, expect } from "@playwright/test"` (no POM extraction, ≤2
-  tests, relaxed-2026 import policy per migration-rules §2).
+- **Import style:** `import { test, expect } from "@playwright/test"` — no POM, no custom fixture,
+  ≤2 tests; relaxed 2026-06-03 import policy per `migration-rules.md` §2.
 
 ---
 
 ## Open questions for reviewer
 
 ```
-Q1: Should baseURL be set to "https://bonigarcia.dev" in playwright.config.ts?
-Context: Line 52 — driver.get("https://bonigarcia.dev/selenium-webdriver-java/loading-images.html").
-What I assumed (if proceeding without an answer): Yes — configure
-  baseURL: process.env.BASE_URL ?? "https://bonigarcia.dev"
-  and use relative path "/selenium-webdriver-java/loading-images.html".
-Impact if my assumption is wrong: If this SUT is expected to be replaced by a local/staging
-  clone, the relative path is wrong and the URL must be reviewed per deployment topology.
+Q1: baseURL — set to "https://bonigarcia.dev" or leave to the project default?
+Context: Lines 52–53 — driver.get("https://bonigarcia.dev/selenium-webdriver-java/loading-images.html").
+What I assumed: playwright.config.ts sets baseURL: process.env.BASE_URL ?? 'https://bonigarcia.dev'.
+  Stage 2 emits await page.goto('/selenium-webdriver-java/loading-images.html').
+Impact if wrong: If the project intends to run against a locally controlled mirror of this content,
+  the default URL must change. The reference playwright.config.ts template uses
+  'http://localhost:3000' as the fallback — that is wrong for this SUT; bonigarcia.dev must be the
+  default.
 ```
 
 ```
-Q2: Is the 10-second wait tolerance still required, or is the default 5-second actionTimeout
-    (playwright.config.ts) sufficient for this page?
-Context: Lines 55–56 — .withTimeout(Duration.ofSeconds(10)).pollingEvery(Duration.ofSeconds(1)).
-  The source used 10 s because WebDriverWait/FluentWait are not integrated into assertion retry;
-  Playwright's web-first assertions auto-poll with the configured expect.timeout.
-What I assumed (if proceeding without an answer): Raise expect.timeout to 10_000 only for this
-  assertion (per-call override) to preserve original tolerance:
+Q2: Per-assertion timeout — { timeout: 10_000 } per call, or raise expect.timeout globally?
+Context: Lines 55–56 — FluentWait with Duration.ofSeconds(10). Default actionTimeout is 5,000 ms.
+  The loading-images demo deliberately loads images asynchronously; 5 s may be insufficient on a
+  slow connection or loaded CI runner.
+What I assumed: Stage 2 passes { timeout: 10_000 } to the single toHaveAttribute call:
     await expect(locator).toHaveAttribute('src', /landscape/i, { timeout: 10_000 })
-Impact if my assumption is wrong: If the demo page reliably loads within 5 s, the override is
-  unnecessary noise. If CI runners are slower than 5 s, the default will fail flakily.
+  with a WHY-comment: "Source FluentWait used 10 s — image load on this page is intentionally delayed."
+  A global raise of expect.timeout to 10_000 in playwright.config.ts is an acceptable alternative
+  if the reviewer prefers config-level visibility.
+Impact if wrong: Using the 5 s default without an override will fail on slow CI runners with a
+  timeout error that looks like a product regression. Hard-wait substitutes (waitForTimeout,
+  setTimeout, sleep) are NOT acceptable — the { timeout: 10_000 } per-call override is the only
+  valid replacement.
 ```
 
 ```
-Q3: Does the #landscape element have alt text containing "landscape"?
-Context: Line 59 — By.id("landscape") on an image-loading demo page. Almost certainly an <img>
-  but the alt attribute is unknown without DOM inspection.
-What I assumed (if proceeding without an answer): alt="landscape" (or similar) is present, based
-  on the bonigarcia educational style and the id name. Primary recommendation is
-  page.getByAltText(/landscape/i) (MED confidence). Fallback is page.locator('#landscape') (HIGH).
-Impact if my assumption is wrong: If alt is absent or differs, getByAltText throws immediately.
-  Switch to locator('#landscape') and add an inline WHY-comment per migration-rules §5.
+Q3: Does <img id="landscape"> have an alt attribute whose value matches /landscape/i?
+Context: Line 59 — By.id("landscape") on the loading-images page. Source code does not include
+  DOM fixtures; alt text is inferred from naming convention only.
+What I assumed: alt="landscape" (or similar) is present. Primary: page.getByRole("img",
+  { name: /landscape/i }) [MED]. Fallback: page.locator('#landscape') [HIGH].
+Impact if wrong: If getByRole("img", { name: /landscape/i }) is emitted but alt is absent or
+  different, Stage 2 produces a test that finds no element and fails as a locator-not-found error.
+  Reviewer MUST resolve this by inspecting the live DOM before Stage 2 runs. If unresolved,
+  Stage 2 MUST fall back to locator('#landscape') with the verbatim WHY-comment
+  'Q3 unresolved — alt text not confirmed' per pin 1.
 ```
 
 ```
-Q4: Does getDomProperty("src") return an absolute URL or can the raw src attribute be a relative
-    path that still contains "landscape"?
-Context: Lines 61–62 — assertThat(landscape.getDomProperty("src")).containsIgnoringCase("landscape").
-  getDomProperty returns the IDL attribute (resolved absolute URL), while getAttribute returns the
-  raw HTML attribute (may be relative).
-What I assumed (if proceeding without an answer): The raw src HTML attribute contains "landscape"
-  in the filename component (e.g., "img/landscape-3297.jpg"), so toHaveAttribute('src', /landscape/i)
-  matches whether the src is absolute or relative.
-Impact if my assumption is wrong: If the raw src is a generic CDN URL without "landscape" in the
-  path (e.g., "img/photo-3297.jpg"), toHaveAttribute would fail but getDomProperty("src") would
-  still match because the resolved absolute URL contains the hostname. In that case the assertion
-  must change to: await expect(locator).toHaveAttribute('src', /.+/) combined with a separate
-  page.evaluate() check on the resolved src — or the assertion intent needs to be re-evaluated.
+Q4: getDomProperty("src") vs toHaveAttribute("src") — do both contain "landscape"?
+Context: Lines 61–62 — getDomProperty returns the resolved absolute URL (IDL attribute);
+  toHaveAttribute checks the raw HTML attribute value (may be relative).
+What I assumed: Both the HTML src attribute and the resolved property value contain "landscape" in
+  the filename (e.g., the src attribute is something like "img/landscape-3297.jpg"). The
+  case-insensitive regex /landscape/i covers both forms.
+Impact if wrong: If the raw HTML src attribute is a server-generated path without "landscape"
+  (e.g., a numeric CDN URL), toHaveAttribute would pass the source assertion but fail the migrated
+  one. Stage 2 should note this semantic difference with a WHY-comment inline.
 ```
 
 ```
-Q5: Should the assertion verify that the image RENDERED successfully (naturalWidth > 0) rather
-    than just that src was assigned?
-Context: Lines 61–62 — source test checks src attribute content, not whether the browser decoded
-  the image. A broken link with "landscape" in the path would pass.
-What I assumed (if proceeding without an answer): Preserve the same assertion depth as the source
-  (src attribute contains "landscape"). Noted as a known oracle weakness.
-Impact if my assumption is wrong: A stricter assertion (e.g., page.evaluate on img.complete &&
-  img.naturalWidth > 0) would catch 404 image links. The reviewer may want to add this as a
-  separate assertion or upgrade the locator to include a visual check.
+Q5: Is the image-loaded oracle sufficient — src contains "landscape" but not naturalWidth > 0?
+Context: Lines 61–62 — source checks src substring, not browser decode success. A 404 with the
+  right filename passes the current assertion.
+What I assumed: Preserve the same assertion depth as the source. Noted as a known oracle weakness.
+Impact if wrong: If the reviewer wants to catch broken image URLs (404 responses), a
+  page.evaluate() checking img.complete && img.naturalWidth > 0 would be needed as a second
+  assertion — this is out of scope for the migration unless explicitly requested.
 ```
 
 ```
-Q6: Is there a reason the source test uses presenceOfElementLocated (DOM presence) rather than
-    visibilityOfElementLocated (visible to user)?
-Context: Lines 59–60 — EC.presenceOfElementLocated(By.id("landscape")). An image could be present
-  in the DOM but hidden (display:none or opacity:0).
-What I assumed (if proceeding without an answer): The page's intent is for images to become visible
-  once loaded. If visibility is the correct contract, replace toHaveAttribute with toBeVisible()
-  before the attribute assertion. Recommend reviewer confirms from the demo page behavior.
-Impact if my assumption is wrong: Using only toHaveAttribute means the test passes even if the
-  image is in the DOM but hidden. A two-step approach (toBeVisible then toHaveAttribute) would
-  be more representative of user-perceivable behavior.
+Q6: EC.presenceOfElementLocated vs visibilityOfElementLocated — which is the correct contract?
+Context: Lines 59–60 — source uses presenceOfElementLocated (DOM-attached, not necessarily visible).
+  An <img> could be in the DOM but hidden (display:none, opacity:0).
+What I assumed: toHaveAttribute auto-waits for element attachment; the page intent is for images
+  to become visible once loaded, so the two are equivalent in practice.
+Impact if wrong: If an image could be attached but hidden, toHaveAttribute passes but the user
+  cannot see the image. Adding a toBeVisible() call before or after toHaveAttribute would be the
+  fix, at the cost of a slightly stricter oracle.
 ```
 
 ---
 
 ## Risk callouts
 
-- **External SUT dependency:** The target URL is `https://bonigarcia.dev/...` — a public third-party
-  site. Any downtime or rate-limiting on that domain causes flakes unrelated to product code. Consider
-  whether the test should run against a local fixture server or be gated to a `@slow @e2e` tag that
-  is not in the default CI matrix.
+- **External SUT flake:** `https://bonigarcia.dev` is a public third-party site not under project
+  control. Downtime, DNS failures, or rate-limiting of CI IPs cause the test to fail with a
+  navigation timeout unrelated to any product regression. Tag `@e2e` (and optionally `@slow`) to
+  enable CI gating so this test can be excluded from the default fast run.
 
-- **No image-rendered assertion:** The test verifies only that `src` contains "landscape", not that
-  the browser successfully decoded and displayed the image. A 404 resource with the right filename
-  passes. This is a known oracle weakness inherited from the source; see Q5.
+- **Timeout regression from 5 s default:** The source's 10-second FluentWait tolerance was chosen
+  because this demo page deliberately loads images asynchronously. Dropping to the 5-second
+  `actionTimeout` default without a per-assertion `{ timeout: 10_000 }` override halves the
+  tolerance and produces false-positive CI failures on any loaded runner. See Q2 — the override is
+  mandatory, not advisory.
 
-- **`toHaveAttribute` vs `getDomProperty` semantic difference:** Selenium's `getDomProperty("src")`
-  resolves the absolute URL; Playwright's `toHaveAttribute` reads the raw HTML attribute value
-  (which may be a relative path). If a future change to the demo page uses a CDN URL without
-  "landscape" in the path, the assertion may diverge from the original. See Q4.
+- **`getDomProperty` vs `toHaveAttribute` semantic gap:** Selenium's `getDomProperty("src")`
+  returns the fully-resolved absolute URL; Playwright's `toHaveAttribute` checks the raw HTML
+  attribute value, which may be a relative path. For this test the regex `/landscape/i` should
+  match both forms, but Stage 2 must include a WHY-comment noting the semantic difference so a
+  future maintainer does not change the regex to an exact-string match and silently break the
+  assertion. See Q4.
 
-- **Timeout regression:** The original FluentWait used a 10-second ceiling. Playwright's default
-  `expect.timeout` is 5 seconds (migration-rules §6 config). If the image takes 6–9 seconds on a
-  slow CI runner, the migrated test will fail where the original passed. Mitigation: per-assertion
-  `{ timeout: 10_000 }` override; see Q2.
+- **Locator confidence gap:** The primary locator `page.getByRole("img", { name: /landscape/i })`
+  is MED confidence. If alt text is absent or does not match `/landscape/i`, Stage 2 produces a
+  test that immediately throws "locator not found" with no clear diagnostic. Reviewer MUST resolve
+  Q3 before Stage 2 runs to avoid this failure mode. If Q3 cannot be resolved, Stage 2 uses
+  `page.locator('#landscape')` with the verbatim WHY-comment per pin 1 — this is the correct and
+  safe path, not a degraded fallback.
 
-- **Locator confidence gap:** The primary recommended locator `page.getByAltText(/landscape/i)` is
-  MED confidence. If the alt text assumption is wrong, Stage 2 emits a locator that throws
-  immediately (no element found). The fallback `page.locator('#landscape')` is HIGH confidence
-  and should be used if Q3 is not resolved before Stage 2 runs.
+- **Single-image scope is narrow:** Only `#landscape` is tested; the other three images on the
+  page (`#compass`, `#waterfall`, `#city`) are not covered. This mirrors the source scope
+  deliberately — extending coverage to all four images is out of scope unless the reviewer requests
+  it.
 
 ---
 
 ## Expected metrics
 
-- **Selector quality score (estimated):** 1/1 = 1.0 if `getByAltText` confirmed; 0/1 = 0.0 if
-  falling back to `locator('#landscape')`. Target ≥ 0.7 — reviewer should resolve Q3 before
-  Stage 2 to achieve the target.
-- **Smell count delta vs source:** −7 (−1 installer ceremony, −1 hardcoded URL, −1 FluentWait
-  boilerplate, −1 ExpectedConditions ceremony, −1 manual teardown, −1 sync DOM assertion, −1 magic
-  timeout/poll numbers; +0 new smells)
-- **LOC delta (estimated):** −50 (source ~65 LOC Java → target ~15 LOC TypeScript; reduction from
-  dropping imports, class/field boilerplate, FluentWait ceremony, @BeforeEach/@AfterEach lifecycle)
-- **Anti-pattern coverage:** 7/7 catalogued, all addressed
+- **Selector quality score (estimated):** 1/1 = 1.0 if Q3 confirms alt text
+  (`getByRole("img", { name: /landscape/i })` is tier-1 role-based); 0/1 = 0.0 if Q3 is
+  unresolved and fallback `locator('#landscape')` is used. Reviewer should resolve Q3 before
+  Stage 2 runs to hit the ≥ 0.7 target.
+- **Smell count delta vs source:** −7 (−1 WebDriverManager installer, −1 hardcoded URL, −1
+  FluentWait boilerplate, −1 ExpectedConditions ceremony, −1 sync DOM-property assertion, −1
+  `@AfterEach` driver.quit, −1 magic duration literals; +0 new smells introduced)
+- **Source LOC:** ~65 (including copyright header, blank lines, imports, class/field boilerplate)
+- **Estimated target LOC:** ~20–25
+- **LOC delta:** ~−40
+- **Anti-pattern coverage:** 7/7
