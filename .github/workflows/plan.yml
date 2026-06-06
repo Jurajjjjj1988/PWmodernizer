@@ -84,7 +84,9 @@ jobs:
             fi
             JSON=$(jq -nc --arg p "$INPUT" '[$p]')
           else
-            JSON=$(git diff --name-only HEAD^ HEAD -- 'inputs/**' | group_to_unit)
+            # Skip _provenance/ directories (license + KB-mapping docs, not tests)
+            # and _stress/ adversarial fixtures (intentionally bad-shape inputs).
+            JSON=$(git diff --name-only HEAD^ HEAD -- 'inputs/**' | grep -vE '(^|/)_(provenance|stress)(/|$)' | group_to_unit)
           fi
           echo "inputs_json=$JSON" >> "$GITHUB_OUTPUT"
           if [ "$(echo "$JSON" | jq 'length')" -gt 0 ]; then
