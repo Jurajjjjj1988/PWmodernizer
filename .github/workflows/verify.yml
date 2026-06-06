@@ -272,7 +272,17 @@ jobs:
               return
             fi
             local v
-            v=$(grep -E '^- Verdict:' "$file" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//' || true)
+            # Accept multiple shapes Sonnet/Opus produce in practice:
+            #   `- Verdict: SHIP IT`
+            #   `Verdict: SHIP IT`
+            #   `Verdict: **SHIP IT**` (markdown bold)
+            # Strip leading dash, leading **, and any trailing markdown/parens.
+            v=$(grep -iE '^(- )?Verdict:' "$file" | head -n1 \
+                | sed -E 's/^(- )?[Vv]erdict:[[:space:]]+//' \
+                | sed -E 's/^\*\*//; s/\*\*//g' \
+                | sed -E 's/[[:space:]]*\(.*$//' \
+                | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
+                || true)
             case "$v" in
               "SHIP IT"|"FIX FIRST"|"START OVER") echo "$v" ;;
               *) echo "START OVER" ;;   # unparseable → conservative
@@ -447,7 +457,11 @@ jobs:
           # Parse 3-level verdict from the combined report. The tally step
           # emits exactly one `- Verdict: <X>` line in the consensus tally
           # block, so the same regex as the single-Opus design works.
-          VERDICT=$(grep -E '^- Verdict:' "$REPORT" | head -n1 | sed -E 's/^- Verdict:[[:space:]]+//')
+          VERDICT=$(grep -iE '^(- )?Verdict:' "$REPORT" | head -n1 \
+              | sed -E 's/^(- )?[Vv]erdict:[[:space:]]+//' \
+              | sed -E 's/^\*\*//; s/\*\*//g' \
+              | sed -E 's/[[:space:]]*\(.*$//' \
+              | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
           case "$VERDICT" in
             "START OVER")
               # ---------------------------------------------------------------
