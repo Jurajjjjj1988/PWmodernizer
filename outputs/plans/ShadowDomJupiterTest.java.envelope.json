@@ -1,0 +1,61 @@
+{
+  "inputBasename": "ShadowDomJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "renders Hello Shadow DOM text inside shadow root @positive",
+      "userAction": "Navigate to the shadow DOM demo page and locate the paragraph inside the #content host element's shadow root.",
+      "expectedAssertions": [
+        "paragraph inside #content shadow root contains 'Hello Shadow DOM'"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.findElement(By.id(\"content\"))",
+      "target": "page.locator('#content')",
+      "confidence": "high",
+      "notes": "Mechanical By.id(\"x\") → locator('#x') per KB-6 Rule 1. No aria evidence to promote to getByRole. Reviewer: confirm element type (see Q5)."
+    },
+    {
+      "original": "content.getShadowRoot()",
+      "target": "N/A — dropped",
+      "confidence": "high",
+      "notes": "Playwright CSS engine auto-pierces open shadow DOM. No explicit shadow root access needed. If shadow root is closed-mode, this translation fails — see Q2."
+    },
+    {
+      "original": "shadowRoot.findElement(By.cssSelector(\"p\"))",
+      "target": "page.locator('#content').locator('p')",
+      "confidence": "med",
+      "notes": "CSS tag p inside shadow root. Single <p> assumed (see Q1). Reviewer alternative: page.locator('#content').getByText('Hello Shadow DOM') if text is unique on page (elevates to tier-3). See pin 1."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Shadow DOM paragraph <p>",
+      "assumedLocator": "page.locator('#content').locator('p')",
+      "sourceLocator": "shadowRoot.findElement(By.cssSelector(\"p\"))",
+      "whyComment": "Q1 unresolved: multiple <p> in shadow root possible — .first() index is fragile",
+      "reviewerFallback": "Inspect live page at https://bonigarcia.dev/selenium-webdriver-java/shadow-dom.html; if text is unique use page.getByText('Hello Shadow DOM'); if multiple <p> exist add .first() with the WHY-comment above."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Assertion text match mode",
+      "assumedLocator": "await expect(page.locator('#content').locator('p')).toContainText('Hello Shadow DOM')",
+      "sourceLocator": "assertThat(textElement.getText()).contains(\"Hello Shadow DOM\")",
+      "whyComment": "Q unresolved: toContainText (substring) mirrors AssertJ .contains() — use toHaveText if exact match is required",
+      "reviewerFallback": "If paragraph text is exactly 'Hello Shadow DOM' with no surrounding whitespace, switch to toHaveText('Hello Shadow DOM')."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.5,
+    "smellCountDelta": -5,
+    "locDelta": -28,
+    "antiPatternCoverage": "6/6"
+  }
+}
