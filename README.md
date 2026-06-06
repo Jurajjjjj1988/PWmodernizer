@@ -8,17 +8,17 @@
 
 **Honest scope:** PWmodernizer is _assistive scaffolding_, not a deterministic test framework migrator. Each migration produces a markdown plan + JSON envelope + generated code + a metrics report + a verify verdict. **Human review is required** before merge. Quality target: 70% acceptable rate on the bad-Playwright corpus before promoting Cypress/Selenium beyond example status.
 
-## Current state (2026-06-04)
+## Current state (2026-06-06)
 
-The pipeline is end-to-end live. Status snapshot:
+The pipeline is end-to-end PROVEN on random public GitHub tests. Status snapshot:
 
-- **156 commits**, latest = trajectory tracer (`06251dc`).
-- **Bad-Playwright** — Stage 1 + Stage 2 PROVEN on `flaky-waits.spec.ts` (PR #2, confidence 0.75 under v2 formula).
-- **Selenium-java** — first real multi-file Stage 1 SHIPPED as PR #3 (`EmployeesTest.java` + `pages/EmployeesPage.java` + `helpers/DriverFactory.java` = 140 LOC across 3 files, commit `2a6ccc7`). Stage 2 trigger fired on merge.
-- **Cypress** — first real input landed in `inputs/cypress/checkout-flow.cy.js` (55 LOC, commit `98b9368`). Awaiting plan.yml trigger.
-- **Selenium-python** — corpus in place, awaiting first plan.yml trigger.
-- **DOM grounding** — Phase 7c live calibration 6/6 GREEN (commit `7d4746d`); `DOM_GROUND_STRICT=true` set as repo var.
-- **CANDOR verify** — 2-agent SDET + Code-Review consensus shipped (commit `3993b01`); verify-tally TS replica + 6 calibration fixtures (commit `ce68273`).
+- **6/6 random public Selenium tests → solid Stage 1 plans** (PR #6 PromptJupiter, #10 SelHQ Python, #11 ExplicitWait, #12 AddCookies, #14 FluentWait, #19 ShadowDOM — all real bonigarcia/SeleniumHQ Apache-2.0 code, zero hallucinated KB-IDs across ~50 anti-pattern citations)
+- **5/5 Stage 2 cross-language code outputs** (PR #13/#15/#16/#17/#18 — Java + Python → Playwright TS, all `confidence:high`, plan:scenario pins emitted, hallucination-defense WHY-comments materialised)
+- **CANDOR verify validated N=3** (PR #16 = 2/2 SHIP IT, PR #15/#17 = SHIP IT + FIX FIRST = reviewer required — real divergence, not synthetic agreement)
+- **DOM grounding** — Phase 7c live calibration 6/6 GREEN against `saucedemo.com` + `conduit.bondaracademy.com` + `practicetestautomation.com`; `DOM_GROUND_STRICT=true` set as repo var
+- **8 validators / 53 calibration fixtures** GREEN (kb 6 + envelope 6 + ast-diff 11 + examples 6 + coverage 6 + dom-ground 6 + verify-tally 6 + danger-policy 6)
+- **9 real infra bugs found + fixed today** (Stage 0 `\b@Test\b` + `\bdef test_\b` regex, AST-diff cross-language path, plan-code-coverage path, evaluate path, peer-dep ERESOLVE, peter-evans 400 auth, regression-semantic checkbox parser, verify parser `Verdict: **SHIP IT**` format)
+- **Walkthrough** uses real bonigarcia migration (PR #6 → PR #13) as canonical example
 
 ## Why this exists
 
@@ -114,8 +114,8 @@ inputs/<framework>/foo.spec.ts
 | Command | What it does | When to run |
 |---|---|---|
 | `npm run quickstart` | 10-check onboarding (Node, deps, types, KB, examples, fragments, envelope, derive-roundtrip, calibration) with hints | First time setup; debugging "why does CI fail?" |
-| `npm run smoke` | Same as CI: typecheck:all + 7 validators + 46-fixture calibration + eslint. Silent on success | Pre-push, every commit |
-| `npm run validate:all` | 7 validators + 46 calibration fixtures | When touching scripts/ or examples/ |
+| `npm run smoke` | Same as CI: typecheck:all + 8 validators + 53-fixture calibration + eslint. Silent on success | Pre-push, every commit |
+| `npm run validate:all` | 8 validators + 53 calibration fixtures | When touching scripts/ or examples/ |
 | `npm run check:kb` | KB ID uniqueness + references resolve (125 IDs, 55 refs as of 2026-06-04) | When editing knowledge-base.md or expected-plan.md |
 | `npm run check:examples` | Examples KB/Q-ID cross-references (strict) | When editing examples/*/expected-plan.md |
 | `npm run check:assemble` | Prompt fragment `{{include:}}` markers resolve + `prompts/_assembled/` is in sync with source | When editing prompts/_fragments/ or prompts/*.md (stale detection catches forgotten `npm run assemble-prompts`) |
@@ -135,7 +135,7 @@ inputs/<framework>/foo.spec.ts
 | `npm run metrics:report` | Reads `outputs/.metrics.db` and prints cross-run trends (per-framework counts, KB-ID frequency, verdict distribution, confidence sparkline) | Inspecting pipeline trends after >=3 real runs |
 | `npm run metrics:export` | Exports the same data as JSON | CI artifact upload, future dashboard backend |
 | `npm run dashboard` | Starts a read-only web UI at http://localhost:8000 reading `outputs/.metrics.db` (5 charts including per-framework stacked verdict + multi-line confidence trend + "Migrator quality by framework" table) | Visual review of cross-run metrics |
-| `npm run calibrate` | Run 7 validators against 46 fixtures (kb 6 + envelope 6 + ast-diff 10 + examples 6 + coverage 6 + dom-ground 6 + verify-tally 6) | After validator code changes |
+| `npm run calibrate` | Run 8 validators against 53 fixtures (kb 6 + envelope 6 + ast-diff 11 + examples 6 + coverage 6 + dom-ground 6 + verify-tally 6 + danger-policy 6) | After validator code changes |
 | `npm run derive-envelope -- --plan <md> --out <json>` | Backfill envelope from markdown plan | When manually fixing a plan that's missing envelope |
 | `npm run assemble-prompts` | Expand `{{include:}}` markers into `prompts/_assembled/` | After editing prompts/_fragments/ |
 | `npm run typecheck` | TS strict on outputs/tests/ | After editing playwright.config.ts or migrations |
@@ -146,7 +146,7 @@ inputs/<framework>/foo.spec.ts
 
 ### Trigger your first migration
 
-> Full end-to-end walkthrough using a real merged PR as the example: [`docs/walkthrough.md`](docs/walkthrough.md). PR #3 (the first cross-file Selenium plan) is the canonical narrative.
+> Full end-to-end walkthrough using a real merged PR as the example: [`docs/walkthrough.md`](docs/walkthrough.md). PR #6 (real bonigarcia Selenium test plan) → PR #13 (cross-language code output) is the canonical narrative.
 
 1. Drop a bad Playwright (or Cypress / Selenium) spec into `inputs/<framework>/your-test.spec.ts`.
 2. Commit and push.
@@ -354,7 +354,7 @@ The pipeline implements specific patterns from the LLM-as-code-author literature
 - **Schema demotion under Tam et al. 2024:** the `Hallucination-defense pins` section was emergent in early runs; we considered making it mandatory, then demoted it back to ENCOURAGED after research showed forced structured-output sections degrade reasoning quality (JSON-mode dropped Claude 3 Haiku 86.5% → 23.4% on GSM8K).
 - **Token-based input gate (NVIDIA RULER):** Stage 0 uses character/4 token estimate capped at 25K (well below the ~50% degradation threshold of Claude's 1M context). 15 adversarial fixtures calibrate the gate.
 - **3-level verdict ladder (from QA-skills `22-reality-check.md`):** `SHIP IT` / `FIX FIRST` / `START OVER` — round-up rule, no soft middle. Lives in `prompts/_fragments/verdict-ladder.md`.
-- **Validator calibration (Sakasegawa 2026):** every validator promoted from `--warn` to `--strict` only after fixture-driven calibration. Current state: 7 validators, 46 fixtures, 100% calibrated. Premature gating produces false confidence.
+- **Validator calibration (Sakasegawa 2026):** every validator promoted from `--warn` to `--strict` only after fixture-driven calibration. Current state: 8 validators, 53 fixtures, 100% calibrated. Premature gating produces false confidence.
 - **Abandon-and-regenerate flow:** `/regenerate` slash command via `peter-evans/slash-command-dispatch` lets a reviewer close a bad plan PR and force fresh Stage 1 with comment body as feedback. Auto-fires on START OVER verdict, cap 3 attempts.
 - **tree-sitter AST diff for Java + Python** — real Zhang-Shasha tree-edit-distance with identifier normalization for Selenium `.java` and `.py` inputs. Replaces the LCS string-overlap fallback for non-TS inputs (commit `666332a`). Calibration 10/10.
 - **Plan-vs-code coverage check (LPW closure)** — `scripts/plan-code-coverage.ts` runs post-Stage-2: every `scenarios[].id` from the envelope must appear as exactly one `// plan:scenario=<id>` comment in the generated code; `requiredPOMs[]` and `requiredFixtures[]` files must exist; subtractive plans must only import `@playwright/test` + relative paths. arXiv 2411.14503 (LPW) contract enforced end-to-end.
