@@ -145,9 +145,12 @@ jobs:
           - Verdict: START OVER
           EOF
           )
+          # 25 turns: SDET + Code Review each need to Read 3-5 files
+          # (plan, generated spec, POMs, report) + Write 1 verdict.md.
+          # 12 was too tight — real-world Java migrations hit limit consistently.
           claude \
             --model claude-opus-4-7 \
-            --max-turns 12 \
+            --max-turns 25 \
             --print \
             --permission-mode acceptEdits \
             "$PROMPT"
