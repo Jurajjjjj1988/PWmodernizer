@@ -1,0 +1,47 @@
+{
+  "inputBasename": "SelectJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "selects option by visible text and verifies selection",
+      "userAction": "Navigate to the web form, select the dropdown option whose visible label is 'Three', then confirm the dropdown reflects 'Three' as the current selection.",
+      "expectedAssertions": [
+        "After selectOption({ label: 'Three' }): the dropdown widget value reflects the 'Three' option as selected"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "By.name(\"my-select\")",
+      "target": "page.locator('select[name=\"my-select\"]')",
+      "confidence": "high",
+      "notes": "Mechanical CSS translation of By.name(x) → [name='x']. Prefer page.getByLabel(...) if reviewer confirms an associated <label> element exists in the DOM (Q1). Upgrade does not affect test correctness, only locator quality score."
+    },
+    {
+      "original": "select.getFirstSelectedOption().getText()",
+      "target": "expect(page.locator('select[name=\"my-select\"]')).toHaveValue('Three')",
+      "confidence": "med",
+      "notes": "toHaveValue() targets the option's value attribute, not its visible text. Assumes value attribute equals visible text 'Three'. If value differs, fallback is: page.locator('select[name=\"my-select\"] option:checked').toHaveText('Three'). See Q2 and pin 1."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Dropdown selected-value assertion",
+      "assumedLocator": "expect(page.locator('select[name=\"my-select\"]')).toHaveValue('Three')",
+      "sourceLocator": "select.getFirstSelectedOption().getText()",
+      "whyComment": "Q2 unresolved: option value attribute assumed to equal visible text 'Three' — confirm via DOM inspection",
+      "reviewerFallback": "Open DevTools on the web-form page, inspect <option> elements inside the my-select dropdown, note the value attribute for 'Three'; if it differs from 'Three', either pass the actual value to toHaveValue() or switch the assertion to page.locator('select[name=\"my-select\"] option:checked').toHaveText('Three')"
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.5,
+    "smellCountDelta": -6,
+    "locDelta": -44,
+    "antiPatternCoverage": "6/6"
+  }
+}
