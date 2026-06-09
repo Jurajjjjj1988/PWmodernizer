@@ -161,7 +161,14 @@ jobs:
             --verbose \
             --permission-mode acceptEdits \
             "$PROMPT" \
-            | tee "/tmp/claude-verify-${{ matrix.lens }}-events.ndjson"
+            > "/tmp/claude-verify-${{ matrix.lens }}-events.ndjson"
+          # NB: direct `>` redirect, NOT `| tee`. With `set -o pipefail`
+          # (bash default in workflow steps), Opus + stream-json + tee
+          # caused SIGPIPE death when the terminal couldn't keep up with
+          # verbose event output. SDET subagent of run 27237077229 was
+          # killed after ~7s of LLM activity with the tee pattern. Direct
+          # redirect loses live CI log visibility for the Claude turn
+          # stream but the NDJSON is captured in the file for cost-capture.
 
       - name: Capture Claude usage stats (cost tracking)
         continue-on-error: true

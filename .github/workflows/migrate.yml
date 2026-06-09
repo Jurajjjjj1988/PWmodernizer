@@ -275,7 +275,11 @@ jobs:
             --verbose \
             --permission-mode acceptEdits \
             "$PROMPT" \
-            | tee /tmp/claude-migrate-events.ndjson
+            > /tmp/claude-migrate-events.ndjson
+          # NB: direct `>` redirect, NOT `| tee`. Sonnet + stream-json
+          # with verbose output can SIGPIPE the LLM if the terminal can't
+          # keep up. Same root cause as verify.yml. Direct redirect is
+          # the documented stable pattern for capturing stream-json.
 
       - name: Capture Claude usage stats (cost tracking)
         continue-on-error: true
