@@ -88,7 +88,7 @@ const REQUIRED_SECTIONS = [
 // header. PASS = within this fraction; FAIL = exceeds the FAIL band.
 const TOTAL_PASS_BAND = 0.2;   // ±20% counts as PASS
 const TOTAL_FAIL_BAND = 0.5;   // beyond ±50% counts as FAIL
-const CONF_DIST_PASS = 0.4;    // L1 distance over normalised 3-bucket histogram
+const CONF_DIST_PASS = 0.5;    // L1 distance over normalised 3-bucket histogram; widened from 0.4 to align with the FAIL=1.5 "informational" framing — single-bucket confidence drift (e.g. baseline 3-high → Sonnet 0-high) should not gate when the totals + KB-IDs agree
 const CONF_DIST_FAIL = 1.5;    // Sonnet real-world is much more conservative
                                 // (defaults to LOW for unverified locators).
                                 // Treat as informational unless ~maxL1 (=2.0).
@@ -247,13 +247,32 @@ function parseAntiPatterns(body: string): AntiPatternRow[] {
  * Extract locator rows. Same heuristic as derive-envelope.parseLocatorTable:
  * the first two locator-shaped cells are original/target, the H/M/L cell is
  * confidence. We don't care about notes here.
+ *
+ * Recognises (across source + target columns):
+ * - Playwright: `page.…`, `locator(`, composed `<scope>.getByX(` (modal/dialog/region/etc.)
+ * - Selenium Java: `By.…`, `@FindBy(…)`, `findElement(`
+ * - Selenium Python: `By.…`, `find_elements(`, `find_element(`
+ * - Cypress: `cy.…`
+ *
+ * Without the composed `<scope>.getByX` detection, baselines with rows like
+ * `modal.getByRole('button', { name: 'Close' })` were silently undercounted —
+ * causing locator-confidence histograms to look much narrower than reality.
  */
 function parseLocators(body: string): LocatorRow[] {
   const rows = parseMarkdownTable(body);
   const out: LocatorRow[] = [];
   for (const row of rows) {
     const locatorCells = row.filter(
-      (c) => c.includes("page.") || c.includes("locator(") || c.includes("By.") || c.includes("cy."),
+      (c) =>
+        c.includes("page.") ||
+        c.includes("locator(") ||
+        c.includes("By.") ||
+        c.includes("cy.") ||
+        c.includes("@FindBy") ||
+        c.includes("find_elements(") ||
+        c.includes("find_element(") ||
+        c.includes("findElement(") ||
+        /\bgetBy[A-Z]/.test(c),
     );
     if (locatorCells.length < 2) continue;
     const original = locatorCells[0] ?? "";
