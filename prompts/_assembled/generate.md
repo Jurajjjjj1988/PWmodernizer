@@ -169,7 +169,7 @@ Additional generator-specific rules (not covered by the forbidden-patterns list)
    - Are all imports present and used?
    - Any `any`, `force: true`, hard waits, magic numbers, console.log left?
    - Does the AST differ structurally from the input, or is it transliteration?
-6. **Write the migration report.** Schema below.
+6. **Write the migration report.** Schema below. **Before you write a number into the report, locate it in the spec.** Selector counts come from grepping locator factory calls in your emitted `.spec.ts`; assertion counts come from grepping `expect(` calls. Do not paraphrase plan estimates — verify-CR cross-checks every metric against your code (PR #15 FIX FIRST root cause).
 
 ## Migration report schema
 
@@ -274,6 +274,25 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
 9. **Leaving `// TODO`s without plan Q-id reference.** If a TODO doesn't tie back to a specific plan open question or risk callout, it's noise and someone has to investigate from scratch.
 10. **Test titles starting with "should".** Verb phrase ("opens checkout when cart has items"), per `migration-rules.md` and `test-organization`.
 11. **Missing or wrong `// plan:scenario=<id>` pins on test blocks.** Per ROADMAP v1.0 "Plan envelope enforcement", every generated `test(...)` block needs a `// plan:scenario=<id>` comment immediately above it, with `<id>` matching exactly one envelope `scenarios[].id`. Missing pins, duplicate pins, and orphan pins (id not in envelope) all fail the `plan-envelope-validate.ts --code` gate in `migrate.yml`. This is the LPW contract closure (arXiv 2411.14503) — the envelope says what scenarios must exist; the pins prove they were generated.
+
+12. **Report metrics paraphrased from the plan instead of counted from your emitted code.** When you write the `## Metrics` section, you MUST count selectors, assertions, and locator-quality buckets **from the `.spec.ts` you just wrote**, not copy the plan's estimates. Verify-CR lens flags this specifically (PR #15 FluentWait FIX FIRST: report claimed "1 canonical / 1 fragile = 50%" for a spec with exactly 1 locator — arithmetic impossible). Concrete rules:
+    - **Selector quality denominator = total locator count in your emitted code.** If your spec has 1 locator total, you cannot report `1 canonical / 1 fragile` (that's 2 locators). The numerator + fragile count must equal the denominator.
+    - **Web-first assertion rate denominator = total `expect(...)` count in your emitted code.** Same arithmetic check.
+    - **All 6 canonical smell categories appear in the per-category delta block**, even when the delta is `0` or `−0`. Omitting "Hardcoded URLs" because you have nothing to report there (and folding it into "Smell removal rate") hides real cleanup work and is what PR #16 ExplicitWait got dinged for. Use the schema in `## Metrics` verbatim.
+    - **Plan-vs-actual drift > 20% must be acknowledged**, not silently emitted. If the plan estimated 22–25 LOC and you produced 29, add a one-line note to `## Disagreements with the plan` explaining why.
+    - **Self-check before writing the report:** read your generated `.spec.ts`, count, then write the metrics. Do not write metrics from memory or from the plan.
+
+13. **KB-ID citation whose catalogued worked example doesn't match the source pattern in form** (not just in principle). A KB entry is a worked example — `KB-1.4.3` is specifically the CSS *styling-class* anti-pattern (`.btn-primary`), not "any fragile CSS selector." `KB-1.3.10` is specifically the URL-substring assertion, not "any sync DOM-property check." Citing one of these for a close-but-different pattern is what verify Code Review caught across all 3 PRs. When the principle fits but the worked example diverges:
+    - **First choice:** find a closer existing KB entry (search `config/knowledge-base.md` by both ID and example text).
+    - **Second choice:** emit `KB-UNCLASSIFIED` and add a `Cross-framework reuse:` or `Generalized application:` line in the report's `## Open issues / known gaps` section explaining what's missing. `KB-UNCLASSIFIED` is a sanctioned sentinel per `kb-id-format.md` — use it.
+    - **Forbidden:** silent close-but-not-exact citation. Reviewer will catch it and the migration takes a `info` finding (3/3 PRs in the calibration batch — universal smell).
+
+14. **Carrying source basename casing into the output filename.** `migration-rules.md` §"File naming" mandates **kebab-case**, regardless of source style. The plan may have committed the same source-casing error — override it AND surface the override in `## Disagreements with the plan`. Examples:
+    - `using_selenium_tests.py` → `using-selenium-tests.spec.ts` (NOT `using_selenium_tests.spec.ts` — what PR #17 emitted)
+    - `FluentWaitJupiterTest.java` → `fluent-wait-jupiter-test.spec.ts` (NOT `FluentWaitJupiterTest.spec.ts`)
+    - `checkout_flow.cy.js` → `checkout-flow.spec.ts` (NOT `checkout_flow.spec.ts`)
+
+    Apply BEFORE checking the plan's `## Output filename`; the kebab-case rule wins.
 
 ## Tone and style of the generated code
 
