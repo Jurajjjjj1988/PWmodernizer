@@ -1,0 +1,33 @@
+{
+  "inputBasename": "EventListenerJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "navigates to demo home page and reaches the web form @positive @e2e",
+      "userAction": "Visit the bonigarcia Selenium WebDriver demo home page, verify the page title matches the book title, then click the Web form navigation link and confirm arrival on the web form page.",
+      "expectedAssertions": [
+        "page title equals 'Hands-On Selenium WebDriver with Java'",
+        "after clicking Web form link: URL matches /web-form/ (or web form heading is visible — see Q1 in plan)"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "By.linkText(\"Web form\")",
+      "target": "page.getByRole('link', { name: 'Web form' })",
+      "confidence": "high",
+      "notes": "By.linkText exact-text match equals link accessible name; direct mechanical translation to getByRole('link', { name })."
+    }
+  ],
+  "hallucinationDefensePins": [],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -6,
+    "locDelta": -19,
+    "antiPatternCoverage": "5/5"
+  }
+}
