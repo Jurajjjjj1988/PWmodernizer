@@ -128,38 +128,40 @@ function resolveOutputFiles(arg: string): string[] {
 }
 
 /**
- * Convert envelope.inputBasename → expected emitted spec basename.
+ * Convert envelope.inputBasename → list of plausible emitted spec basenames.
  * Per `migration-rules.md` §"File naming" + `prompts/generate.md` Bullet 14,
- * Stage 2 ALWAYS emits kebab-case `<basename>.spec.ts`. Keep in sync with
- * `plan-envelope-validate.ts:expectedSpecBasename` — duplicated to avoid a
- * cyclic import for two-line helpers.
+ * Stage 2 emits kebab-case `<basename>.spec.ts`. Sonnet often drops a
+ * redundant trailing `-test` because `.spec.ts` already implies test-ness.
+ * Keep in sync with `plan-envelope-validate.ts:expectedSpecBasenames`.
  */
-function expectedSpecBasename(inputBasename: string): string {
+function expectedSpecBasenames(inputBasename: string): string[] {
   const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
   const kebab = stem
     .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
     .replaceAll("_", "-")
     .toLowerCase();
-  return `${kebab}.spec.ts`;
+  const out = new Set<string>([`${kebab}.spec.ts`]);
+  const dropTest = kebab.replace(/-tests?$/, "");
+  if (dropTest !== kebab) out.add(`${dropTest}.spec.ts`);
+  return Array.from(out);
 }
 
 /**
- * Scope outputs to specs belonging to THIS envelope's input. The directory
- * mode walks `outputs/tests/**` which accumulates specs from every prior
- * Stage 2 run; without this filter scenario id 1.1 from this input collides
- * with 1.1 from every other input under the same dir.
+ * Scope outputs to specs belonging to THIS envelope's input. Directory mode
+ * accumulates specs from every prior Stage 2 run; without this filter
+ * scenario id 1.1 from this input collides with 1.1 from every other input.
  *
- * Fallback to all paths when nothing matches preserves the legacy behaviour
- * for cross-language migrations where Sonnet may rename. The validator's
- * other checks (scenario pin presence) will surface that as a missing pin
- * with a clear message.
+ * Matches on basename equals any candidate OR basename starts-with any
+ * candidate stem (for sibling specs). Fallback to all paths when no match
+ * preserves legacy cross-language rename behaviour.
  */
 function filterByInput(envelopeInputBasename: string, paths: string[]): string[] {
-  const expected = expectedSpecBasename(envelopeInputBasename);
-  const stem = expected.replace(/\.spec\.ts$/, "");
+  const candidates = expectedSpecBasenames(envelopeInputBasename);
+  const stems = candidates.map((c) => c.replace(/\.spec\.ts$/, ""));
   const matches = paths.filter((p) => {
     const b = p.split("/").pop() ?? "";
-    return b === expected || b.startsWith(`${stem}.`);
+    if (candidates.includes(b)) return true;
+    return stems.some((s) => b.startsWith(`${s}.`));
   });
   return matches.length > 0 ? matches : paths;
 }

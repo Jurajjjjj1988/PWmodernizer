@@ -128,24 +128,33 @@ function resolveCodeFiles(codeArg: string): string[] {
 }
 
 /**
- * Convert envelope.inputBasename to the expected emitted spec basename.
+ * Convert envelope.inputBasename to a LIST of plausible emitted spec basenames.
  * Per `migration-rules.md` §"File naming" + `prompts/generate.md` Bullet 14,
- * Stage 2 ALWAYS emits kebab-case `<basename>.spec.ts`, regardless of source
- * casing (PascalCase Java, snake_case Python, kebab dir basename).
+ * Stage 2 emits kebab-case `<basename>.spec.ts`. In practice Sonnet often
+ * drops a trailing `-test` because `.spec.ts` already implies a test file:
+ *   PromptJupiterTest.java → prompt-jupiter.spec.ts (observed) OR
+ *                             prompt-jupiter-test.spec.ts (literal kebab)
+ *   FluentWaitJupiterTest.java → fluent-wait-jupiter.spec.ts (observed in main)
+ * We accept both forms to avoid forcing Sonnet into a stylistic corner that
+ * doesn't change the contract.
  *
- * Examples:
- *   PromptJupiterTest.java      → prompt-jupiter-test.spec.ts
- *   using_selenium_tests.py     → using-selenium-tests.spec.ts
- *   checkout_flow.cy.js         → checkout-flow.spec.ts
- *   selenium-java-03-multifile  → selenium-java-03-multifile.spec.ts
+ * Other cases:
+ *   using_selenium_tests.py     → using-selenium-tests.spec.ts (snake → kebab)
+ *   checkout_flow.cy.js         → checkout-flow.spec.ts (also dropping `-test`)
+ *   selenium-java-03-multifile  → selenium-java-03-multifile.spec.ts (dir basename)
  */
-function expectedSpecBasename(inputBasename: string): string {
+function expectedSpecBasenames(inputBasename: string): string[] {
   const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
   const kebab = stem
     .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
     .replaceAll("_", "-")
     .toLowerCase();
-  return `${kebab}.spec.ts`;
+  const out = new Set<string>([`${kebab}.spec.ts`]);
+  // Drop redundant trailing `-test` / `-tests` — Sonnet's observed rename
+  // when the .spec.ts extension already implies test-ness.
+  const dropTest = kebab.replace(/-tests?$/, "");
+  if (dropTest !== kebab) out.add(`${dropTest}.spec.ts`);
+  return Array.from(out);
 }
 
 /**
@@ -154,20 +163,18 @@ function expectedSpecBasename(inputBasename: string): string {
  * Stage 2 run; without this filter, pin counts aggregate across unrelated
  * inputs and every scenario id 1.1 gets flagged "pinned N times".
  *
- * Heuristic — match by basename starts-with the envelope's expected basename
- * stem (covers `prompt-jupiter-test.spec.ts` exact match and also
- * `prompt-jupiter-test.helpers.spec.ts` style sibling specs Sonnet may split
- * out). When NO file matches, fall back to ALL codePaths — preserves the
- * legacy behaviour for repos that emit a single non-conforming filename
- * (cross-language migrations Sonnet renames). The legacy `Sonnet may rename`
- * comment in validateSubtractiveImports flags this as an existing edge case.
+ * Match strategy — basename equals one of the candidates OR starts with one
+ * of the candidate stems (covers sibling specs like `<base>.helpers.spec.ts`).
+ * When NO file matches, fall back to ALL codePaths — preserves the legacy
+ * behaviour for cross-language migrations where Sonnet may rename further.
  */
 function filterCodePathsByInput(envelope: Envelope, codePaths: string[]): string[] {
-  const expected = expectedSpecBasename(envelope.inputBasename);
-  const stem = expected.replace(/\.spec\.ts$/, "");
+  const candidates = expectedSpecBasenames(envelope.inputBasename);
+  const stems = candidates.map((c) => c.replace(/\.spec\.ts$/, ""));
   const matches = codePaths.filter((p) => {
     const b = p.split("/").pop() ?? "";
-    return b === expected || b.startsWith(`${stem}.`);
+    if (candidates.includes(b)) return true;
+    return stems.some((s) => b.startsWith(`${s}.`));
   });
   return matches.length > 0 ? matches : codePaths;
 }
