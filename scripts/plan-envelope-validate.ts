@@ -127,11 +127,61 @@ function resolveCodeFiles(codeArg: string): string[] {
   return proj.getSourceFiles().map((sf) => sf.getFilePath());
 }
 
+/**
+ * Convert envelope.inputBasename to the expected emitted spec basename.
+ * Per `migration-rules.md` §"File naming" + `prompts/generate.md` Bullet 14,
+ * Stage 2 ALWAYS emits kebab-case `<basename>.spec.ts`, regardless of source
+ * casing (PascalCase Java, snake_case Python, kebab dir basename).
+ *
+ * Examples:
+ *   PromptJupiterTest.java      → prompt-jupiter-test.spec.ts
+ *   using_selenium_tests.py     → using-selenium-tests.spec.ts
+ *   checkout_flow.cy.js         → checkout-flow.spec.ts
+ *   selenium-java-03-multifile  → selenium-java-03-multifile.spec.ts
+ */
+function expectedSpecBasename(inputBasename: string): string {
+  const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
+  const kebab = stem
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replaceAll("_", "-")
+    .toLowerCase();
+  return `${kebab}.spec.ts`;
+}
+
+/**
+ * Filter codePaths to specs that BELONG to this envelope's input. The
+ * directory walked via `--code outputs/tests/` accumulates specs from every
+ * Stage 2 run; without this filter, pin counts aggregate across unrelated
+ * inputs and every scenario id 1.1 gets flagged "pinned N times".
+ *
+ * Heuristic — match by basename starts-with the envelope's expected basename
+ * stem (covers `prompt-jupiter-test.spec.ts` exact match and also
+ * `prompt-jupiter-test.helpers.spec.ts` style sibling specs Sonnet may split
+ * out). When NO file matches, fall back to ALL codePaths — preserves the
+ * legacy behaviour for repos that emit a single non-conforming filename
+ * (cross-language migrations Sonnet renames). The legacy `Sonnet may rename`
+ * comment in validateSubtractiveImports flags this as an existing edge case.
+ */
+function filterCodePathsByInput(envelope: Envelope, codePaths: string[]): string[] {
+  const expected = expectedSpecBasename(envelope.inputBasename);
+  const stem = expected.replace(/\.spec\.ts$/, "");
+  const matches = codePaths.filter((p) => {
+    const b = p.split("/").pop() ?? "";
+    return b === expected || b.startsWith(`${stem}.`);
+  });
+  return matches.length > 0 ? matches : codePaths;
+}
+
 function validateScenarioCoverage(envelope: Envelope, codePaths: string[]): Violation[] {
-  if (codePaths.length === 0) return [];
+  // Scope to specs that belong to THIS envelope's input. Without this filter,
+  // a directory-mode --code aggregates pins across every Stage 2 output in
+  // `outputs/tests/` and flags scenario id 1.1 as "pinned N times" once you
+  // have N specs (each input legitimately starts numbering at 1.1).
+  const scoped = filterCodePathsByInput(envelope, codePaths);
+  if (scoped.length === 0) return [];
   const project = new Project({ useInMemoryFileSystem: false });
   const aggregated = new Map<string, number>();
-  for (const p of codePaths) {
+  for (const p of scoped) {
     const sf = project.addSourceFileAtPath(p);
     for (const [id, count] of collectScenarioPins(sf)) {
       aggregated.set(id, (aggregated.get(id) ?? 0) + count);
@@ -143,13 +193,13 @@ function validateScenarioCoverage(envelope: Envelope, codePaths: string[]): Viol
     const n = aggregated.get(id) ?? 0;
     if (n === 0) {
       out.push({
-        file: codePaths[0] ?? "(code)",
+        file: scoped[0] ?? "(code)",
         line: 1,
         message: `scenario id '${id}' has no '// plan:scenario=${id}' pin in generated code`,
       });
     } else if (n > 1) {
       out.push({
-        file: codePaths[0] ?? "(code)",
+        file: scoped[0] ?? "(code)",
         line: 1,
         message: `scenario id '${id}' pinned ${n} times — must be exactly one`,
       });
@@ -158,7 +208,7 @@ function validateScenarioCoverage(envelope: Envelope, codePaths: string[]): Viol
   for (const id of aggregated.keys()) {
     if (!expected.has(id)) {
       out.push({
-        file: codePaths[0] ?? "(code)",
+        file: scoped[0] ?? "(code)",
         line: 1,
         message: `code pins scenario '${id}' that is not declared in envelope.scenarios`,
       });
@@ -180,12 +230,18 @@ function validatePomFixturePaths(envelope: Envelope, envelopePath: string): Viol
 
 function validateSubtractiveImports(envelope: Envelope, codePaths: string[]): Violation[] {
   if (!envelope.subtractive || codePaths.length === 0) return [];
+  // Same scope discipline as scenario coverage — only inspect specs belonging
+  // to THIS envelope's input. Otherwise we'd flag a Cypress migration's
+  // `import { defineConfig } from 'cypress'` as a violation for an unrelated
+  // bad-Playwright envelope being validated against the same outputs/tests/.
+  const scoped = filterCodePathsByInput(envelope, codePaths);
+  if (scoped.length === 0) return [];
   const out: Violation[] = [];
   // Allow Playwright core, node built-ins, and relative imports. Anything else
   // is a framework-translation smell that doesn't belong in a subtractive run.
   const allowed = new Set(["@playwright/test", "playwright"]);
   const project = new Project({ useInMemoryFileSystem: false });
-  for (const p of codePaths) {
+  for (const p of scoped) {
     const sf = project.addSourceFileAtPath(p);
     for (const imp of sf.getDescendantsOfKind(SyntaxKind.ImportDeclaration)) {
       const mod = imp.getModuleSpecifierValue();
