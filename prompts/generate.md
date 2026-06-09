@@ -197,6 +197,8 @@ These will get your output rejected on PR review (or worse, merged and break tru
     - **All 6 canonical smell categories appear in the per-category delta block**, even when the delta is `0` or `−0`. Omitting "Hardcoded URLs" because you have nothing to report there (and folding it into "Smell removal rate") hides real cleanup work and is what PR #16 ExplicitWait got dinged for. Use the schema in `## Metrics` verbatim.
     - **Plan-vs-actual drift > 20% must be acknowledged**, not silently emitted. If the plan estimated 22–25 LOC and you produced 29, add a one-line note to `## Disagreements with the plan` explaining why.
     - **Self-check before writing the report:** read your generated `.spec.ts`, count, then write the metrics. Do not write metrics from memory or from the plan.
+    - **The report's `Output:` line MUST reference YOUR emitted spec filename**, not a paraphrased or copy-pasted filename from another report. PR #13 verify Code Review (PromptJupiter, 2026-06-09) caught a `block`-severity violation where the report said `Output: outputs/tests/using_selenium_tests.spec.ts (29 LOC)` while the actual emitted spec was `outputs/tests/prompt-jupiter.spec.ts (52 LOC)` — a wholesale copy-paste from a completely different migration. **The filename in the report MUST match the file you just wrote.** Run `wc -l` mentally on your own emitted code before writing the LOC line.
+    - **`dialog.message()`, `dialog.accept()`, `dialog.dismiss()` are NOT web-first** even when wrapped in `expect(...).toBe(...)`. They read a transient event-payload value, not a Locator state. When you have N total `expect(...)` calls of which M are `await expect(locator).<matcher>()` and the rest are `expect(dialog.message()).toBe(...)`-style sync probes, the web-first rate is `M/N`, not `100%`. Stage 2 mis-classified this on PR #13 (claimed 100% when actual was 2/4 = 50%) — a `block`-severity falsification.
 
 13. **KB-ID citation whose catalogued worked example doesn't match the source pattern in form** (not just in principle). A KB entry is a worked example — `KB-1.4.3` is specifically the CSS *styling-class* anti-pattern (`.btn-primary`), not "any fragile CSS selector." `KB-1.3.10` is specifically the URL-substring assertion, not "any sync DOM-property check." Citing one of these for a close-but-different pattern is what verify Code Review caught across all 3 PRs. When the principle fits but the worked example diverges:
     - **First choice:** find a closer existing KB entry (search `config/knowledge-base.md` by both ID and example text).
@@ -209,6 +211,33 @@ These will get your output rejected on PR review (or worse, merged and break tru
     - `checkout_flow.cy.js` → `checkout-flow.spec.ts` (NOT `checkout_flow.spec.ts`)
 
     Apply BEFORE checking the plan's `## Output filename`; the kebab-case rule wins.
+
+15. **`expect()` inside a `page.once('dialog', ...)` / `page.on('dialog', ...)` handler before calling `dialog.accept()`/`dismiss()`.** PR #13 verify SDET (PromptJupiter, 2026-06-09) caught this `warn`-severity pattern:
+
+    ```ts
+    // ❌ WRONG — if expect() throws, handler aborts before accept(),
+    //    dialog stays open, awaiting click() hangs to actionTimeout,
+    //    reviewer sees a confusing timeout instead of "expected X to be Y"
+    page.once("dialog", async (dialog) => {
+      expect(dialog.message()).toBe(EXPECTED_PROMPT_MESSAGE);
+      await dialog.accept(PROMPT_INPUT_TEXT);
+    });
+    await page.locator("#my-prompt").click();
+    ```
+
+    ```ts
+    // ✅ CORRECT — capture in closure, assert AFTER the click resolves
+    //    (the click implicitly waits for the dialog event to be handled)
+    let capturedMessage: string | undefined;
+    page.once("dialog", async (dialog) => {
+      capturedMessage = dialog.message();
+      await dialog.accept(PROMPT_INPUT_TEXT);
+    });
+    await page.locator("#my-prompt").click();
+    expect(capturedMessage).toBe(EXPECTED_PROMPT_MESSAGE);
+    ```
+
+    The same rule applies to ANY async event handler where the action depends on the handler completing (`page.on('request')`, `page.on('response')` chains, etc.) — assertions inside a handler that gates a downstream action are an ergonomic failure even when the test still detects the regression.
 
 ## Tone and style of the generated code
 

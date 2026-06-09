@@ -486,6 +486,26 @@ jobs:
             --envelope "$ENV" \
             --output "outputs/tests"
 
+      - name: Report-metric self-consistency (Bullet 12 defense-in-depth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Cross-check the migration report's claimed filename + LOC against
+          # the actually-emitted spec. Catches Sonnet copy-pasting from another
+          # report (PR #13 PromptJupiter root cause: report said
+          # using_selenium_tests.spec.ts(29 LOC) while actual was
+          # prompt-jupiter.spec.ts(52 LOC)). Hard-fail — block-severity bug.
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          REPORT="outputs/reports/${BASE}.md"
+          INPUT="${{ needs.guard.outputs.input_path }}"
+          if [ ! -f "$REPORT" ]; then
+            echo "::warning::No report at $REPORT — skipping (evaluate.ts will write it)"
+            exit 0
+          fi
+          npx tsx scripts/validate-report-metrics.ts \
+            --report "$REPORT" \
+            --input "$INPUT"
+
       - name: Output secret scan (mirror Stage 0)
         shell: bash
         run: |
