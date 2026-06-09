@@ -127,6 +127,43 @@ function resolveOutputFiles(arg: string): string[] {
   return proj.getSourceFiles().map((sf) => sf.getFilePath());
 }
 
+/**
+ * Convert envelope.inputBasename → expected emitted spec basename.
+ * Per `migration-rules.md` §"File naming" + `prompts/generate.md` Bullet 14,
+ * Stage 2 ALWAYS emits kebab-case `<basename>.spec.ts`. Keep in sync with
+ * `plan-envelope-validate.ts:expectedSpecBasename` — duplicated to avoid a
+ * cyclic import for two-line helpers.
+ */
+function expectedSpecBasename(inputBasename: string): string {
+  const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
+  const kebab = stem
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replaceAll("_", "-")
+    .toLowerCase();
+  return `${kebab}.spec.ts`;
+}
+
+/**
+ * Scope outputs to specs belonging to THIS envelope's input. The directory
+ * mode walks `outputs/tests/**` which accumulates specs from every prior
+ * Stage 2 run; without this filter scenario id 1.1 from this input collides
+ * with 1.1 from every other input under the same dir.
+ *
+ * Fallback to all paths when nothing matches preserves the legacy behaviour
+ * for cross-language migrations where Sonnet may rename. The validator's
+ * other checks (scenario pin presence) will surface that as a missing pin
+ * with a clear message.
+ */
+function filterByInput(envelopeInputBasename: string, paths: string[]): string[] {
+  const expected = expectedSpecBasename(envelopeInputBasename);
+  const stem = expected.replace(/\.spec\.ts$/, "");
+  const matches = paths.filter((p) => {
+    const b = p.split("/").pop() ?? "";
+    return b === expected || b.startsWith(`${stem}.`);
+  });
+  return matches.length > 0 ? matches : paths;
+}
+
 interface PinHit {
   id: string;
   file: string;
@@ -290,13 +327,18 @@ function main(): number {
     return 1;
   }
   const envelope = loadEnvelope(envelopePath);
-  const outputPaths = resolveOutputFiles(args.output);
-  if (outputPaths.length === 0) {
+  const allPaths = resolveOutputFiles(args.output);
+  if (allPaths.length === 0) {
     process.stderr.write(
       `::error::--output path not found or empty: ${args.output}\n`,
     );
     return 1;
   }
+  // Scope to specs that belong to THIS envelope's input. Directory mode
+  // collects every spec under `outputs/tests/` regardless of which input
+  // produced it; without this filter, scenario id 1.1 (per-input local) gets
+  // counted across N specs and the validator flags "pinned N times".
+  const outputPaths = filterByInput(envelope.inputBasename, allPaths);
   const violations: Violation[] = [
     ...validateScenarioCoverage(envelope, outputPaths),
     ...validateSubtractiveImports(envelope, outputPaths),
