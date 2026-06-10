@@ -1,0 +1,48 @@
+{
+  "inputBasename": "IFramesJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "counts paragraph elements inside the my-iframe iframe @positive",
+      "userAction": "Navigate to the iframes test page, locate the my-iframe iframe, and assert it contains exactly 20 paragraph elements.",
+      "expectedAssertions": [
+        "iframe my-iframe resolves and is accessible via frameLocator",
+        "exactly 20 <p> elements are present inside the iframe (toHaveCount(20))"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "EC.frameToBeAvailableAndSwitchToIt(\"my-iframe\")",
+      "target": "page.frameLocator('iframe[name=\"my-iframe\"]')",
+      "confidence": "med",
+      "notes": "Selenium string overload matches name OR id; DOM inspection needed to confirm attribute. Fallback: page.frameLocator('#my-iframe') if id is used. See Q1 and Pin 1."
+    },
+    {
+      "original": "By.tagName(\"p\")",
+      "target": "frameLocator.locator('p')",
+      "confidence": "high",
+      "notes": "Direct tag-name translation inside the frame context. No accessible ARIA role exists for generic <p> elements; CSS tag selector is the only viable approach."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "iframe context switch by name/id",
+      "assumedLocator": "page.frameLocator('iframe[name=\"my-iframe\"]')",
+      "sourceLocator": "EC.frameToBeAvailableAndSwitchToIt(\"my-iframe\")",
+      "whyComment": "Q1 unresolved: iframe attribute type (name vs id) not confirmed from source alone — Selenium accepts both.",
+      "reviewerFallback": "View page source of https://bonigarcia.dev/selenium-webdriver-java/iframes.html and confirm <iframe name=\"my-iframe\"> vs <iframe id=\"my-iframe\">. If id: switch to page.frameLocator('#my-iframe')."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.0,
+    "smellCountDelta": -9,
+    "locDelta": -43,
+    "antiPatternCoverage": "9/9"
+  }
+}
