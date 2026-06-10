@@ -26,6 +26,22 @@
  *      blocks; default mode prints `::warning::`.
  *   7. A spec contains `page.goto(` directly (KB qa-master/architecture/
  *      page-goto-in-spec). Specs must call a Page's `open()`.
+ *   8. Hard-waits (`page.waitForSelector`/`waitForTimeout`/`waitForLoadState`)
+ *      anywhere — KB qa-master/runtime/no-hard-waits. THE #1 flake source per
+ *      root CLAUDE.md.
+ *   9. `console.log/warn/error/info/debug` in specs + base scaffolding —
+ *      diagnostics must route through `@logger` (the lone sanctioned console
+ *      wrapper is `outputs/helper/utilities/logger.ts`). KB
+ *      qa-master/observability/no-console.
+ *  10. `outputs/helper/utilities/**` files must be PURE — no Playwright,
+ *      no fs, no axios, no `fetch(`. logger.ts is exempt (stable interface).
+ *      KB qa-master/layer/utilities-pure.
+ *  11. `outputs/helper/test-data/**` files must be CONSTANTS ONLY —
+ *      `export const` allowed; `export function` / `export async function` /
+ *      `export class` blocked. KB qa-master/layer/test-data-constants-only.
+ *  12. `fetch(` / `page.request.` in `outputs/helper/page-object/**` —
+ *      API wrappers belong in `helper/api/`, never in page objects.
+ *      KB qa-master/layer/api-not-in-page.
  *
  * Soft-fail conditions (warn-severity; printed as ::warning:: but do not
  * change exit code):
@@ -356,6 +372,154 @@ function checkSpecPageGoto(rootAbs: string, file: string): Violation[] {
   return out;
 }
 
+/** Check 8 — hard-waits forbidden anywhere under `outputs/`.
+ *
+ * `page.waitForSelector(`, `page.waitForTimeout(`, `page.waitForLoadState(`
+ * are the #1 flake source the pipeline migrates AWAY from (root CLAUDE.md).
+ * Block in specs + every helper file. KB qa-master/runtime/no-hard-waits. */
+function checkHardWaits(rootAbs: string, file: string): Violation[] {
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const out: Violation[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const m = /\b(page\.waitForSelector|page\.waitForTimeout|page\.waitForLoadState)\(/.exec(line);
+    if (!m?.[1]) continue;
+    out.push({
+      file: relative(rootAbs, file),
+      line: i + 1,
+      message: `Hard-wait '${m[1]}(' — KB qa-master/runtime/no-hard-waits. Use web-first assertions (expect(locator).toBeVisible(), etc.) — hard-waits are THE #1 flake source.`,
+      severity: "block",
+    });
+  }
+  return out;
+}
+
+/** Check 9 — `console.log/warn/error` ban in tests + helpers (except logger.ts wrapper).
+ *
+ * The repo ships a single `outputs/helper/utilities/logger.ts` that IS the
+ * sanctioned console.* wrapper; every other file routes diagnostics through
+ * `import logger from "@logger"`. KB qa-master/observability/no-console. */
+function checkConsoleUsage(rootAbs: string, file: string): Violation[] {
+  // Logger is the wrapper — it legitimately calls console.*.
+  if (file.endsWith("/helper/utilities/logger.ts")) return [];
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const out: Violation[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const m = /\bconsole\.(log|warn|error|info|debug)\(/.exec(line);
+    if (!m?.[1]) continue;
+    out.push({
+      file: relative(rootAbs, file),
+      line: i + 1,
+      message: `console.${m[1]}() in test/helper code — KB qa-master/observability/no-console. Route diagnostics through \`import logger from "@logger"\` — only outputs/helper/utilities/logger.ts may call console.*.`,
+      severity: "block",
+    });
+  }
+  return out;
+}
+
+/** Check 10 — utility files (`outputs/helper/utilities/**`) must be pure.
+ *
+ * Utilities are pure parsers / formatters — no browser, no HTTP, no fs, no
+ * Playwright import. The lone exception is `logger.ts`, which has a stable
+ * 4-method interface (info/warn/error/debug) and legitimately wraps console.*.
+ * KB qa-master/layer/utilities-pure. */
+function checkUtilityPurity(rootAbs: string, file: string): Violation[] {
+  // Logger has a stable interface and is exempt from purity scan.
+  if (file.endsWith("/helper/utilities/logger.ts")) return [];
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const out: Violation[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    // Playwright import (any specifier — utilities should not touch Page/Locator/test).
+    if (/\bfrom\s+["']@playwright\/test["']/.test(line)) {
+      out.push({
+        file: relative(rootAbs, file),
+        line: i + 1,
+        message: `Utility imports from '@playwright/test' — KB qa-master/layer/utilities-pure. Utilities must be pure (no browser, no HTTP, no fs). Move browser interaction to a page object.`,
+        severity: "block",
+      });
+    }
+    // Node fs / axios (HTTP libs) / raw fetch — utilities should not hit the network or disk.
+    if (/\bfrom\s+["'](node:)?fs(\/promises)?["']/.test(line) || /\bfrom\s+["']axios["']/.test(line)) {
+      out.push({
+        file: relative(rootAbs, file),
+        line: i + 1,
+        message: `Utility imports fs / axios — KB qa-master/layer/utilities-pure. Utilities must be pure. Move IO to an api helper.`,
+        severity: "block",
+      });
+    }
+    if (/\bfetch\s*\(/.test(line)) {
+      out.push({
+        file: relative(rootAbs, file),
+        line: i + 1,
+        message: `Utility calls fetch() — KB qa-master/layer/utilities-pure. Utilities must be pure. Move HTTP calls to outputs/helper/api/.`,
+        severity: "block",
+      });
+    }
+  }
+  return out;
+}
+
+/** Check 11 — `outputs/helper/test-data/**` must be constants only.
+ *
+ * Test-data is exported `const` payloads / fixtures — never `function`,
+ * `async function`, or `class`. Logic that derives data belongs in a
+ * utility (pure parsing) or an api helper (data preparation).
+ * KB qa-master/layer/test-data-constants-only. */
+function checkTestDataConstantsOnly(rootAbs: string, file: string): Violation[] {
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const out: Violation[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    // `export function …`, `export async function …`, `export class …`.
+    const m = /^\s*export\s+(async\s+function|function|class)\b/.exec(line);
+    if (!m?.[1]) continue;
+    out.push({
+      file: relative(rootAbs, file),
+      line: i + 1,
+      message: `test-data file exports '${m[1].trim()}' — KB qa-master/layer/test-data-constants-only. test-data must be \`export const\` only. Move logic to a utility or api helper.`,
+      severity: "block",
+    });
+  }
+  return out;
+}
+
+/** Check 12 — `fetch(` / `page.request.` forbidden in page objects.
+ *
+ * API wrappers belong in `outputs/helper/api/`; page objects are UI-only.
+ * Mixing HTTP into a Page makes the test untestable in isolation and breaks
+ * the layer boundary. KB qa-master/layer/api-not-in-page. */
+function checkApiInPage(rootAbs: string, file: string): Violation[] {
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const out: Violation[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (/\bfetch\s*\(/.test(line)) {
+      out.push({
+        file: relative(rootAbs, file),
+        line: i + 1,
+        message: `Page object calls fetch() — KB qa-master/layer/api-not-in-page. API wrappers belong in outputs/helper/api/, never in helper/page-object/.`,
+        severity: "block",
+      });
+    }
+    if (/\bpage\.request\./.test(line) || /\bthis\.page\.request\./.test(line)) {
+      out.push({
+        file: relative(rootAbs, file),
+        line: i + 1,
+        message: `Page object uses page.request.* — KB qa-master/layer/api-not-in-page. API wrappers belong in outputs/helper/api/, never in helper/page-object/.`,
+        severity: "block",
+      });
+    }
+  }
+  return out;
+}
+
 /** Soft-check — every utility file should have a matching unit test. */
 function checkUtilitiesCoverage(rootAbs: string): Violation[] {
   const utilDir = join(rootAbs, "helper", "utilities");
@@ -394,6 +558,12 @@ function main(): number {
   const allPageFiles = walk(join(helperDir, "page-object", "pages"), (p) => p.endsWith(".page.ts"));
   const allBlockFiles = walk(join(helperDir, "page-object", "blocks"), (p) => p.endsWith(".block.ts"));
   const allHelperFiles = walk(helperDir, (p) => p.endsWith(".ts"));
+  // Layer-specific file sets (used by new block-severity checks 10/11/12).
+  // Walked unscoped — these layer-purity rules are not basename-tied.
+  const utilityFiles = walk(join(helperDir, "utilities"), (p) => p.endsWith(".ts"));
+  const testDataFiles = walk(join(helperDir, "test-data"), (p) => p.endsWith(".ts"));
+  const pageObjectFiles = walk(join(helperDir, "page-object"), (p) =>
+    p.endsWith(".ts") && !p.endsWith("/basepage.ts") && !p.endsWith("/baseblock.ts"));
 
   // Scope: when --input-basename is given, ONLY check files relevant to THIS
   // migration. The outputs/ tree accumulates v0.1.x legacy specs from prior
@@ -446,6 +616,40 @@ function main(): number {
   // Check 7 — spec page.goto.
   for (const spec of specFiles) {
     violations.push(...checkSpecPageGoto(rootAbs, spec));
+  }
+
+  // Check 8 — hard-waits in specs + base scaffolding files.
+  // Check 9 — console.log/warn/error in specs + base scaffolding files
+  // (logger.ts is the legitimate console.* wrapper and is exempt inside
+  // checkConsoleUsage).
+  //
+  // Scope: spec files (scoped by --input-basename) PLUS the always-shared
+  // scaffolding (base.fixture.ts, basepage.ts, baseblock.ts, logger.ts).
+  // Layer-purity checks 10/11/12 cover utilities/test-data/page-object files
+  // unscoped.
+  const baseScaffoldingFiles = allHelperFiles.filter((p) =>
+    p.endsWith("/helper/fixtures/base.fixture.ts") ||
+    p.endsWith("/helper/page-object/basepage.ts") ||
+    p.endsWith("/helper/page-object/baseblock.ts") ||
+    p.endsWith("/helper/utilities/logger.ts"));
+  for (const file of [...specFiles, ...baseScaffoldingFiles]) {
+    violations.push(...checkHardWaits(rootAbs, file));
+    violations.push(...checkConsoleUsage(rootAbs, file));
+  }
+
+  // Check 10 — utility purity (no Playwright / fs / fetch / axios).
+  for (const file of utilityFiles) {
+    violations.push(...checkUtilityPurity(rootAbs, file));
+  }
+
+  // Check 11 — test-data constants only (no function / class).
+  for (const file of testDataFiles) {
+    violations.push(...checkTestDataConstantsOnly(rootAbs, file));
+  }
+
+  // Check 12 — no fetch / page.request in page objects.
+  for (const file of pageObjectFiles) {
+    violations.push(...checkApiInPage(rootAbs, file));
   }
 
   // Soft — utility coverage.
