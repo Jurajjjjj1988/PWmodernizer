@@ -1,0 +1,42 @@
+{
+  "inputBasename": "WindowJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "maximizes browser window and detects position and size change @edge",
+      "userAction": "Navigate to the demo page, record the initial OS-level browser window position and outer size, maximize the window, then assert that both the position and the size changed.",
+      "expectedAssertions": [
+        "window position after maximize differs from initial position",
+        "window outer size after maximize differs from initial size"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.get(\"https://bonigarcia.dev/selenium-webdriver-java/\")",
+      "target": "await page.goto('/')",
+      "confidence": "med",
+      "notes": "Absolute URL converted to relative path. Assumes baseURL = https://bonigarcia.dev/selenium-webdriver-java in playwright.config.ts. If baseURL is the bare domain, path becomes '/selenium-webdriver-java/'. Confirm before Stage 2 runs (see Q1)."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Demo site navigation URL",
+      "assumedLocator": "await page.goto('/')",
+      "sourceLocator": "driver.get(\"https://bonigarcia.dev/selenium-webdriver-java/\")",
+      "whyComment": "Q1 unresolved: baseURL configuration unknown — assumed https://bonigarcia.dev/selenium-webdriver-java so '/' maps to the site root.",
+      "reviewerFallback": "Confirm baseURL in playwright.config.ts; if baseURL = https://bonigarcia.dev, change path to '/selenium-webdriver-java/'."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -8,
+    "locDelta": -54,
+    "antiPatternCoverage": "8/8"
+  }
+}
