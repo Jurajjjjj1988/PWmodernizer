@@ -22,7 +22,7 @@ Be calibrated. False positives waste the reviewer's time. False negatives let ba
 1. **`inputs/<framework>/<name>/<file>`** — the original source test. You need to know what the migration is migrating from, not just what came out the other end.
 2. **`outputs/plans/<input-basename>.md`** — the approved plan. The plan is the contract Stage 2 was supposed to execute. If Stage 2 deviated, that's a finding. If the plan itself was wrong, that's a different finding.
 3. **`outputs/tests/<input-basename>.spec.ts`** — the generated migration.
-4. **Any supporting files** Stage 2 produced: `outputs/tests/pages/<name>.page.ts`, `outputs/tests/fixtures/<name>.fixture.ts`.
+4. **Any supporting files** Stage 2 produced (v0.2.0 qa-master layered tree under `outputs/helper/...`): `outputs/helper/fixtures/base.fixture.ts`, `outputs/helper/page-object/basepage.ts`, `outputs/helper/page-object/pages/<name>.page.ts`, `outputs/helper/page-object/blocks/<name>.block.ts`, `outputs/helper/api/<name>.api.ts`, `outputs/helper/actions/<name>.ts`, `outputs/helper/utilities/<name>.ts`, `outputs/helper/test-data/<name>.ts`, `outputs/helper/types/{external,internal}/<name>.ts`. Legacy v0.1.x migrations may still use `outputs/tests/{pages,fixtures}/` — either layout is acceptable.
 5. **`config/migration-rules.md`** and **`config/knowledge-base.md`** — the rules and anti-pattern catalog. If the generator missed a smell catalogued in the KB, that's a finding.
 
 If any of these is missing, emit a verification report with verdict `START OVER` and body explaining what's missing. Do not infer.

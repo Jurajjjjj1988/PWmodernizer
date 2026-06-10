@@ -280,7 +280,7 @@ jobs:
           ## Runtime config the generated spec runs against
 
           A playwright config already exists at outputs/tests/playwright.config.ts. Key points:
-          - baseURL is read from MIGRATION_TARGET_URL env var (defaults to http://localhost:3000). Always use relative paths: page.goto("/login") NOT page.goto("https://...").
+          - baseURL is read from MIGRATION_TARGET_URL env var (defaults to http://localhost:3000). Use RELATIVE URLs in the Page's \`open()\` method (e.g. \`await this.page.goto(this.url)\` where \`url\` is \`/login\` from \`@test-data/urls\`) — NEVER an absolute \`https://...\`. \`page.goto()\` lives in the Page class, NOT in the spec. Specs call \`pageObject.open()\` — the spec NEVER calls \`page.goto()\` (KB qa-master/architecture/page-goto-in-spec).
           - actionTimeout: 5_000. If a plan Risk callout calls out longer backend latency (e.g. 7s rate-limit cooldown), emit a per-assertion timeout override ({ timeout: 10_000 }) with a WHY-comment citing the plan question — never bump the global timeout.
           - 3 projects: chromium, firefox, webkit. Generate browser-agnostic specs (no browser-specific shortcuts).
           - retain-on-failure for trace + screenshot + video — don't add explicit page.screenshot() unless the plan asked for it.
