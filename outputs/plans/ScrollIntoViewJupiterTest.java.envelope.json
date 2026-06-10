@@ -1,0 +1,41 @@
+{
+  "inputBasename": "ScrollIntoViewJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "last paragraph of a long page scrolls into view and is in the viewport @positive",
+      "userAction": "Navigate to a long HTML demo page, scroll the last paragraph element into view using scrollIntoViewIfNeeded(), and assert it is visible in the viewport.",
+      "expectedAssertions": [
+        "last paragraph (p:last-child) is in the viewport after scrollIntoViewIfNeeded() — verified via toBeInViewport()"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "By.cssSelector(\"p:last-child\")",
+      "target": "page.locator('p:last-child')",
+      "confidence": "low",
+      "notes": "External public demo page — data-testid cannot be added. CSS structural pseudo-selector is direct mechanical mapping. page.locator('p').last() is an alternative but semantically different (last-child of parent vs. last paragraph in document order). See pin 1 and Q1."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Last paragraph on long page",
+      "assumedLocator": "page.locator('p:last-child')",
+      "sourceLocator": "By.cssSelector(\"p:last-child\")",
+      "whyComment": "Q1 unresolved: p:last-child preserved from source; DOM of external page not inspected — may differ from page.locator('p').last().",
+      "reviewerFallback": "Open https://bonigarcia.dev/selenium-webdriver-java/long-page.html in DevTools, run document.querySelector('p:last-child') and document.querySelectorAll('p')[document.querySelectorAll('p').length-1] — if different, use page.locator('p').last() instead."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 0.0,
+    "smellCountDelta": -8,
+    "locDelta": -40,
+    "antiPatternCoverage": "9/9"
+  }
+}
