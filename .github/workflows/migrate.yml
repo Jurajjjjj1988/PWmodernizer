@@ -499,7 +499,13 @@ jobs:
           # - type-prefix locator names (warn, not block)
           # - no page.goto in specs (Page.open() owns navigation)
           # - utilities have matching unit tests (warn)
-          npx tsx scripts/validate-qa-master-conformance.ts --root outputs
+          # Scoped to THIS input — outputs/tests/ accumulates legacy v0.1.x
+          # specs from prior runs and the validator would reject those even
+          # though they're not this run's responsibility.
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          npx tsx scripts/validate-qa-master-conformance.ts \
+            --root outputs \
+            --input-basename "$BASE"
 
       - name: Report-metric self-consistency (Bullet 12 defense-in-depth)
         shell: bash
