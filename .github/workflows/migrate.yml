@@ -249,10 +249,13 @@ jobs:
             * MUST call \`pageObject.open()\` for navigation (NEVER \`page.goto()\` directly).
             * test bodies use \`test.step(...)\` for each scenario phase.
 
-          Helper files (write IF the plan's required* arrays list them — paths are LITERAL):
-          - outputs/helper/fixtures/base.fixture.ts — single source of \`test\` + \`expect\` (the ONLY file allowed to import from @playwright/test). Re-exports both.
-          - outputs/helper/page-object/basepage.ts — abstract BasePage (constructor takes \`readonly page: Page\`; subclasses declare NO own constructor).
-          - outputs/helper/page-object/baseblock.ts — abstract BaseBlock when blocks are needed.
+          Baseline scaffolding (ALREADY EXISTS on main — DO NOT recreate, only EXTEND if a fixture entry is needed):
+          - outputs/helper/fixtures/base.fixture.ts — present. Single source of \`test\` + \`expect\`. EXTEND with page-object fixture entries via \`test.extend<{...}>({...})\` when the plan declares Pages; otherwise leave untouched.
+          - outputs/helper/page-object/basepage.ts — present. Abstract BasePage with \`open()\` that calls \`this.page.goto(this.url)\` + \`waitForPageLoad()\`. Import via \`import { BasePage } from "@page-object/basepage"\`.
+          - outputs/helper/page-object/baseblock.ts — present. Abstract BaseBlock that takes \`readonly root: Locator\`. Import via \`import { BaseBlock } from "@page-object/baseblock"\` when blocks are needed.
+          - outputs/helper/utilities/logger.ts — present. Default-export \`logger\` with info/warn/error/debug. Import via \`import logger from "@logger"\`.
+
+          Per-migration files (write IF the plan's required* arrays list them — paths are LITERAL):
           - outputs/helper/page-object/pages/<name>.page.ts — \`PageClass<Name>\` extends BasePage with \`readonly\` locator fields; each locator carries \`.describe('[LABEL] ...')\`; every page-method \`expect(...)\` has a \`[LABEL]\` message arg.
           - outputs/helper/page-object/blocks/<name>.block.ts — when a section reaches ~5+ locators / 3+ methods / 3+ pages.
           - outputs/helper/api/<name>.api.ts — API wrappers (data prep — NEVER UI-prep).
@@ -301,7 +304,7 @@ jobs:
           mkdir -p outputs/.usage
           claude \
             --model claude-sonnet-4-6 \
-            --max-turns 20 \
+            --max-turns 30 \
             --print \
             --output-format stream-json \
             --verbose \

@@ -85,16 +85,24 @@ The envelope JSON's `required*` arrays MUST list EVERY file you write (except th
 - **Path aliases ONLY.** `@page-object/pages/…`, `@actions/…`, `@fixtures/…`, `@api/…`, `@browser/…`, `@test-data/…`, `@project-types/…`, `@utilities/…`, `@logger`. No relative imports between `helper/*` subdirs.
 - **Import order**: node:* → @fixtures → @actions → @api → @page-object,@browser → @test-data,@project-types,@utilities. Alphabetical within each group.
 
-### Trivial-migration minimum (5 files)
+### Baseline scaffolding — already on main, do NOT recreate
 
-For SMALL inputs (a single test that touches one Page, no data prep, no parsing), the minimum legal output is:
-- `outputs/helper/page-object/pages/<name>.page.ts` (the one Page)
-- `outputs/helper/fixtures/base.fixture.ts` (mutation OR creation)
-- `outputs/helper/test-data/labels.ts` (mutation OR creation with the new `LABEL_*` constant)
+The following files exist in the repo and are committed to main as the v0.2.0 framework foundation. **Do NOT re-emit them** — read them with the Read tool if needed for context, but don't write them. Doing so wastes turns and may overwrite the canonical shape:
+
+- `outputs/helper/page-object/basepage.ts` — abstract `BasePage` with `open()` (calls `page.goto(this.url)` + `waitForPageLoad()`) and `reloadPage()`. Import via `@page-object/basepage`.
+- `outputs/helper/page-object/baseblock.ts` — abstract `BaseBlock` with `readonly root: Locator`. Import via `@page-object/baseblock` when blocks are needed.
+- `outputs/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`. **EXTEND** this file (add per-Page fixture entries via `test = base.extend<{...}>({...})`) — never recreate.
+- `outputs/helper/utilities/logger.ts` — default-export `logger` with info/warn/error/debug. Import via `@logger`.
+
+### Trivial-migration minimum (per-migration files Sonnet writes)
+
+For SMALL inputs (a single test that touches one Page, no data prep, no parsing), Sonnet's per-migration output is:
+- `outputs/helper/page-object/pages/<name>.page.ts` (the one Page — extends the pre-existing BasePage)
+- `outputs/helper/test-data/labels.ts` (mutation OR creation with the new `LABEL_*` constant) — only if the plan declared labels
 - `outputs/tests/<feature>.spec.ts` (the spec)
 - `outputs/reports/<input-basename>.md` (the report)
 
-There is no "minimal mode" — qa-master IS the mode.
+Plus an OPTIONAL extension of `outputs/helper/fixtures/base.fixture.ts` to inject the new PageClass fixture. Even the trivial case rests on the qa-master scaffolding — there is no "minimal mode" that skips it.
 
 <!-- include-begin: selenium-multifile-rules -->
 Selenium sources are usually DIRECTORIES, not single files (e.g., `BasePage.java` + `LoginPage.java` + `helpers/WebDriverConfig.java` + `LoginTest.java`, or the Python equivalent `base_test.py` + `pages/*.py` + `conftest.py`). Treat the directory as **one migration unit** — the plan describes the whole unit, not file-by-file.

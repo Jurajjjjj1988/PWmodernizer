@@ -122,22 +122,39 @@ function walk(dir: string, predicate: (path: string) => boolean): string[] {
   return out;
 }
 
-/** Check 1 — spec must not import test/expect from `@playwright/test`. */
+/** Check 1 — spec must not import test/expect from `@playwright/test`.
+ *
+ * Type-only imports are EXEMPT — `import type { Page } from "@playwright/test"` and
+ * `import { type Locator } from "@playwright/test"` are universal qa-master patterns
+ * (BasePage takes `readonly page: Page`; BaseBlock takes `readonly root: Locator`).
+ * Type-only imports are erased at compile time and do not pull in the runtime `test`
+ * or `expect` symbols that the rule guards against. */
 function checkSpecImports(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
   const out: Violation[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    if (/\bfrom\s+["']@playwright\/test["']/.test(line)) {
-      out.push({
-        file: relative(rootAbs, file),
-        line: i + 1,
-        message: `Spec imports from '@playwright/test' — KB qa-master/architecture/import-source: only 'outputs/helper/fixtures/base.fixture.ts' may import from '@playwright/test'. Use \`@fixtures/base.fixture\` instead.`,
-        severity: "block",
-      });
-      break;
+    if (!/\bfrom\s+["']@playwright\/test["']/.test(line)) continue;
+    // Exempt: `import type { … } from "@playwright/test"` (whole-import-type form).
+    if (/^\s*import\s+type\b/.test(line)) continue;
+    // Exempt: every named specifier on this line is prefixed with `type ` (inline-type form).
+    // `import { type Page } from "@playwright/test"` → allowed.
+    // `import { type Page, type Locator } from "@playwright/test"` → allowed.
+    // `import { test, expect } from "@playwright/test"` → blocked.
+    // `import { type Page, Locator } from "@playwright/test"` → blocked (mixed).
+    const namedListMatch = /import\s*\{([^}]*)\}\s*from/.exec(line);
+    if (namedListMatch?.[1]) {
+      const specifiers = namedListMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
+      if (specifiers.length > 0 && specifiers.every((s) => /^type\s+\w/.test(s))) continue;
     }
+    out.push({
+      file: relative(rootAbs, file),
+      line: i + 1,
+      message: `Spec imports from '@playwright/test' — KB qa-master/architecture/import-source: only 'outputs/helper/fixtures/base.fixture.ts' may import from '@playwright/test' (type-only imports like \`import type { Page } …\` are exempt). Use \`@fixtures/base.fixture\` instead.`,
+      severity: "block",
+    });
+    break;
   }
   return out;
 }
