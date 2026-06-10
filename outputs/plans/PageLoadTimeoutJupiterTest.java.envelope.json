@@ -1,0 +1,25 @@
+{
+  "inputBasename": "PageLoadTimeoutJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "navigation exceeding 1ms timeout throws a TimeoutError @negative @edge",
+      "userAction": "Call page.goto with a 1ms timeout so the navigation always exceeds the configured limit, and assert the returned Promise rejects with a TimeoutError.",
+      "expectedAssertions": [
+        "page.goto with { timeout: PAGE_LOAD_TIMEOUT_TRIGGER_MS } rejects with an error whose message matches /timeout/i"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [],
+  "hallucinationDefensePins": [],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -5,
+    "locDelta": -5,
+    "antiPatternCoverage": "5/5"
+  }
+}
