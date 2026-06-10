@@ -50,6 +50,25 @@ import { parseArgs } from "node:util";
 interface CliArgs {
   root: string;
   strict: boolean;
+  inputBasename: string | null;
+}
+
+/**
+ * Convert input basename → list of plausible emitted spec basenames.
+ * Kept in sync with plan-envelope-validate.ts: kebab-case + optional -test drop.
+ * When --input-basename is passed, the validator scopes spec checks to files
+ * matching one of these (or to mutated-on-every-run files like base.fixture).
+ */
+function expectedSpecBasenames(inputBasename: string): string[] {
+  const stem = inputBasename.replace(/\.(java|py|cy\.[jt]s|spec\.[jt]s|[jt]s)$/i, "");
+  const kebab = stem
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replaceAll("_", "-")
+    .toLowerCase();
+  const out = new Set<string>([`${kebab}.spec.ts`]);
+  const dropTest = kebab.replace(/-tests?$/, "");
+  if (dropTest !== kebab) out.add(`${dropTest}.spec.ts`);
+  return Array.from(out);
 }
 
 interface Violation {
@@ -64,11 +83,15 @@ function parseCliArgs(): CliArgs {
     options: {
       root: { type: "string", default: "outputs" },
       strict: { type: "boolean", default: false },
+      "input-basename": { type: "string" },
     },
   });
   return {
     root: typeof values.root === "string" ? values.root : "outputs",
     strict: values.strict === true,
+    inputBasename: typeof values["input-basename"] === "string" && values["input-basename"].length > 0
+      ? values["input-basename"]
+      : null,
   };
 }
 
@@ -307,11 +330,34 @@ function main(): number {
   const helperDir = join(rootAbs, "helper");
   const fixtureFile = join(rootAbs, "helper", "fixtures", "base.fixture.ts");
 
-  const specFiles = walk(testsDir, (p) =>
+  const allSpecFiles = walk(testsDir, (p) =>
     p.endsWith(".spec.ts") && !p.endsWith(".test.ts"));
-  const pageFiles = walk(join(helperDir, "page-object", "pages"), (p) => p.endsWith(".page.ts"));
-  const blockFiles = walk(join(helperDir, "page-object", "blocks"), (p) => p.endsWith(".block.ts"));
+  const allPageFiles = walk(join(helperDir, "page-object", "pages"), (p) => p.endsWith(".page.ts"));
+  const allBlockFiles = walk(join(helperDir, "page-object", "blocks"), (p) => p.endsWith(".block.ts"));
   const allHelperFiles = walk(helperDir, (p) => p.endsWith(".ts"));
+
+  // Scope: when --input-basename is given, ONLY check files relevant to THIS
+  // migration. The outputs/ tree accumulates v0.1.x legacy specs from prior
+  // runs; without this filter the validator rejects every previously-emitted
+  // file every time, even though only the current input's files are this
+  // run's responsibility. Always-shared infrastructure (base.fixture.ts,
+  // helper/page-object/{basepage,baseblock}.ts) is included regardless.
+  const expectedSpecs = args.inputBasename ? expectedSpecBasenames(args.inputBasename) : null;
+  const isScopedSpec = (p: string): boolean => {
+    if (!expectedSpecs) return true;
+    const base = p.split("/").pop() ?? "";
+    return expectedSpecs.includes(base);
+  };
+  const isScopedPageBlock = (p: string): boolean => {
+    if (!expectedSpecs) return true;
+    const base = (p.split("/").pop() ?? "").replace(/\.(page|block)\.ts$/, "");
+    // Page/Block files for THIS input derive from the same kebab stem as the spec.
+    const stems = expectedSpecs.map((s) => s.replace(/\.spec\.ts$/, ""));
+    return stems.some((s) => base === s || base.startsWith(`${s}-`) || base.startsWith(`${s}.`));
+  };
+  const specFiles = allSpecFiles.filter(isScopedSpec);
+  const pageFiles = allPageFiles.filter(isScopedPageBlock);
+  const blockFiles = allBlockFiles.filter(isScopedPageBlock);
 
   const violations: Violation[] = [];
 
