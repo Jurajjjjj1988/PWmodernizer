@@ -62,7 +62,14 @@ export default tseslint.config(
       'playwright/no-conditional-in-test': 'error',
       'playwright/no-conditional-expect': 'error',
       'playwright/no-page-pause': 'error',
-      'playwright/expect-expect': 'error',
+      'playwright/expect-expect': ['error', {
+        // qa-master pattern: page methods named expect* wrap expect() with
+        // [LABEL] message args. Default rule only counts `expect` calls; this
+        // adds qa-master's PageClass assertion-method naming convention so
+        // tests that delegate all expects to page methods still pass.
+        // See examples/reference/qa-master/helper/page-object/CLAUDE.md.
+        assertFunctionNames: ['expect', 'expect*', '*.expect*'],
+      }],
       'playwright/missing-playwright-await': 'error',
       'playwright/no-useless-await': 'warn',
       'playwright/prefer-web-first-assertions': 'error',
