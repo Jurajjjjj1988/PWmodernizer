@@ -16,7 +16,7 @@ Be calibrated. False positives waste the reviewer's time. False negatives let ba
 1. **`inputs/<framework>/<name>/<file>`** — the original source test. You need to know what the migration is migrating from, not just what came out the other end.
 2. **`outputs/plans/<input-basename>.md`** — the approved plan. The plan is the contract Stage 2 was supposed to execute. If Stage 2 deviated, that's a finding. If the plan itself was wrong, that's a different finding.
 3. **`outputs/tests/<input-basename>.spec.ts`** — the generated migration.
-4. **Any supporting files** Stage 2 produced: `outputs/tests/pages/<name>.page.ts`, `outputs/tests/fixtures/<name>.fixture.ts`, `outputs/reports/<input-basename>.md`. The report claims metrics — verify them.
+4. **Any supporting files** Stage 2 produced (v0.2.0 qa-master layered tree under `outputs/helper/...`): `outputs/helper/fixtures/base.fixture.ts`, `outputs/helper/page-object/basepage.ts`, `outputs/helper/page-object/pages/<name>.page.ts`, `outputs/helper/page-object/blocks/<name>.block.ts`, `outputs/helper/api/<name>.api.ts`, `outputs/helper/actions/<name>.ts`, `outputs/helper/utilities/<name>.ts`, `outputs/helper/test-data/<name>.ts`, `outputs/helper/types/{external,internal}/<name>.ts`, plus `outputs/reports/<input-basename>.md`. The report claims metrics — verify them. (Migrations from before v0.2.0 may still use the legacy `outputs/tests/{pages,fixtures}/` layout; either layout is acceptable history but new migrations are qa-master-shaped.)
 5. **`config/migration-rules.md`** and **`config/knowledge-base.md`** — the rules and anti-pattern catalog. If the generator missed a smell catalogued in the KB, that's a finding.
 
 If any of these is missing, emit a verification report with verdict `START OVER` and body explaining what's missing. Do not infer.
@@ -57,11 +57,11 @@ For every assertion in the generated test:
 
 ### 3. Structural disagreements
 
-- Did the plan say "extract POM"? Then a POM file should exist. If it doesn't, finding (severity block). If it does but inlined logic remains in the spec file that should be in the POM, finding (severity warn).
-- Did the plan say "no POM"? Then no POM file should exist. If one was created, finding (severity warn) — Stage 2 gold-plated.
-- Same for fixtures and splits.
-- Does the file structure match `migration-rules.md`? Spec at `outputs/tests/`, pages at `outputs/tests/pages/`, fixtures at `outputs/tests/fixtures/`.
-- Are imports correct? Page object imported by path? No circular imports? Fixtures registered correctly via `test.extend`?
+- Did the plan say "extract POM"? Then a PageClass should exist under `outputs/helper/page-object/pages/`. If it doesn't, finding (severity block). If it does but inlined logic remains in the spec file that should be in the PageClass, finding (severity warn).
+- Did the plan say "no POM"? Under v0.2.0 qa-master architecture, **every migration still needs at least one PageClass** (the spec cannot call `page.goto()` directly per `qa-master/architecture/page-goto-in-spec`). "No POM" in legacy v0.1.x envelopes is reinterpreted as "the minimum scaffold only" — base.fixture + basepage + a single thin PageClass. Gold-plating with multi-level POMs/blocks the plan didn't ask for is still a finding (severity warn).
+- Same for fixtures, blocks, actions, api, utilities, test-data, types: presence-vs-plan match.
+- Does the file structure match `migration-rules.md` §1–§4 (v0.2.0)? Spec at `outputs/tests/`, all helpers at `outputs/helper/{fixtures,page-object/{pages,blocks},api,actions,utilities,test-data,types}/`. Legacy migrations may still live at `outputs/tests/{pages,fixtures}/`; either layout is acceptable.
+- Are imports correct? Path aliases (`@fixtures`, `@page-object`, `@api`, `@actions`, `@utilities`, `@test-data`, `@types`, `@logger`) used instead of relative `../` cross-helper imports? Spec imports `test` + `expect` from `@fixtures/base.fixture` (NEVER `@playwright/test` — only base.fixture itself may)? No circular imports? Fixtures registered correctly via `test.extend`?
 - Are test titles verb phrases? "should..." titles are a style finding (severity info).
 
 ### 4. Forbidden patterns the generator missed

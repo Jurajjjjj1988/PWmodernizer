@@ -105,8 +105,8 @@ Per-file fate — record each source file as **KEPT** (reshaped), **DROPPED** (f
 
 - **`BasePage` / `BaseTest`** (parent class with `driver`, `wait`, shared helpers) — typically **DROPPED**. `WebDriverWait` / `ExpectedConditions` helpers map to Playwright web-first matchers (`await expect(...).toBeVisible()` / `.toBeHidden()`); `try-catch-as-flow` helpers (`isVisibleSafe()`) map to the same matchers. KEEP only if helpers carry domain logic.
 - **`WebDriverConfig` / `DriverFactory` / `ThreadLocal<WebDriver>` / pytest `driver` fixture** — **DROPPED**. Playwright's `page` fixture + worker config replace it entirely. No target file.
-- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a slim standalone Playwright POM at `outputs/tests/pages/login.page.ts`. `readonly` `Locator` fields, role-based locators, composition over inheritance. No base class.
-- **`LoginTest` (`@Test` methods)** — **KEPT and RESHAPED**. `@Test` methods become `test(...)` calls inside one `test.describe(...)` in a single spec file. JUnit `@BeforeEach` / `@AfterEach` → `test.beforeEach` / `test.afterEach` (or fold into the `page` fixture). TestNG `@BeforeClass` / `@AfterClass` → worker-scoped fixtures.
+- **`LoginPage extends BasePage` with `@FindBy` annotations** — **KEPT and RESHAPED** into a qa-master PageClass at `outputs/helper/page-object/pages/login.page.ts`. `PageClassLogin extends BasePage` (Playwright BasePage at `@page-object/basepage`, NOT the Java one); NO own constructor; `readonly` `Locator` fields with `.describe('[Login] …')`; role-based locators where DOM evidence supports, CSS id as documented fallback. Selenium's `@FindBy` proxies become Playwright lazy locator fields referencing `this.page`.
+- **`LoginTest` (`@Test` methods)** — **KEPT and RESHAPED**. `@Test` methods become `test(...)` calls inside one `test.describe(...)` in a single spec file under `outputs/tests/`. The spec imports `test`/`expect` from `@fixtures/base.fixture` (NEVER `@playwright/test`) and uses the injected page-object fixtures the plan declared. JUnit `@BeforeEach` / `@AfterEach` → `test.beforeEach` / `test.afterEach` (or fold into the page-object fixture). TestNG `@BeforeClass` / `@AfterClass` → worker-scoped fixtures. Specs NEVER call `page.goto()` — navigation lives on the Page's `open()` method.
 
 Stage 1 emits the per-file fate in the plan's `## Structural changes` section. Stage 2's "Files produced" list reflects the FINAL target tree, not a 1:1 echo of the input directory — do not produce target files for DROPPED sources.
 
@@ -182,7 +182,7 @@ Canonical source: `config/migration-rules.md` §5.
 
 Additional generator-specific rules (not covered by the forbidden-patterns list):
 
-- **All imports correct.** `import { test, expect } from "@playwright/test"`. Page objects imported by path from `./pages/<name>.page`. Fixtures from `./fixtures/<name>.fixture`. No unused imports.
+- **All imports correct (v0.2.0 qa-master).** Specs use `import { test, expect } from "@fixtures/base.fixture"` — NEVER `@playwright/test` (only `outputs/helper/fixtures/base.fixture.ts` itself may import from `@playwright/test`; `validate-qa-master-conformance.ts` hard-fails on any other usage). Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
 - **One `expect` per logical assertion.** Don't chain unrelated checks into one assertion. Don't smear three asserts into one.
 - **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.

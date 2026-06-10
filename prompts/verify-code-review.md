@@ -21,7 +21,7 @@ Be calibrated. False positives waste the reviewer's time. False negatives let ba
 1. **`inputs/<framework>/<name>/<file>`** — the original source test. You need to know what the migration is migrating from, not just what came out the other end.
 2. **`outputs/plans/<input-basename>.md`** — the approved plan. The plan is the contract Stage 2 was supposed to execute. If Stage 2 deviated structurally (POM/fixture/split), that's a finding. If the plan's expected metrics differ from the report's actuals, that's a different finding.
 3. **`outputs/tests/<input-basename>.spec.ts`** — the generated migration.
-4. **Any supporting files** Stage 2 produced: `outputs/tests/pages/<name>.page.ts`, `outputs/tests/fixtures/<name>.fixture.ts`, **`outputs/reports/<input-basename>.md`** — the migration report claims metrics; verify them.
+4. **Any supporting files** Stage 2 produced (v0.2.0 qa-master layered tree under `outputs/helper/...`): `outputs/helper/fixtures/base.fixture.ts`, `outputs/helper/page-object/basepage.ts`, `outputs/helper/page-object/pages/<name>.page.ts`, `outputs/helper/page-object/blocks/<name>.block.ts`, `outputs/helper/api/<name>.api.ts`, `outputs/helper/actions/<name>.ts`, `outputs/helper/utilities/<name>.ts`, `outputs/helper/test-data/<name>.ts`, `outputs/helper/types/{external,internal}/<name>.ts`. Plus **`outputs/reports/<input-basename>.md`** — the migration report claims metrics; verify them. Legacy v0.1.x migrations may still use `outputs/tests/{pages,fixtures}/` — either layout is acceptable.
 5. **`config/migration-rules.md`** and **`config/knowledge-base.md`** — the rules and KB-ID catalog. Citations in the plan / generated code MUST resolve to a real KB ID.
 
 If any of these is missing, emit a verification report with verdict `START OVER` and body explaining what's missing. Do not infer.
@@ -41,7 +41,7 @@ Walk through these. Each produces zero or more rows in the disagreement table. S
 - Did the plan say "extract POM"? Then a POM file should exist. If it doesn't, finding (severity block). If it does but inlined logic remains in the spec file that should be in the POM, finding (severity warn).
 - Did the plan say "no POM"? Then no POM file should exist. If one was created, finding (severity warn) — Stage 2 gold-plated.
 - Same for fixtures and splits. If the plan called for a per-test fixture and Stage 2 inlined the setup, that's a finding.
-- Does the file structure match `migration-rules.md`? Spec at `outputs/tests/`, pages at `outputs/tests/pages/`, fixtures at `outputs/tests/fixtures/`.
+- Does the file structure match `migration-rules.md` §1–§4 (v0.2.0 qa-master)? Spec at `outputs/tests/`, all helpers at `outputs/helper/{fixtures,page-object/{pages,blocks},api,actions,utilities,test-data,types}/`. Spec imports `test` + `expect` from `@fixtures/base.fixture` only — `@playwright/test` imports outside `base.fixture.ts` itself are a `block`-severity finding (KB `qa-master/architecture/import-source`). Specs calling `page.goto()` directly are also `block` (KB `qa-master/architecture/page-goto-in-spec`) — navigation lives on the Page's `open()`. Legacy v0.1.x migrations at `outputs/tests/{pages,fixtures}/` are acceptable history; new migrations must be qa-master-shaped.
 - Are imports correct? Page object imported by path? No circular imports? Fixtures registered correctly via `test.extend`?
 
 ### 2. TypeScript correctness & strict mode

@@ -124,7 +124,7 @@ These are pulled from `migration-rules.md` for emphasis. The migration-rules fil
 
 Additional generator-specific rules (not covered by the forbidden-patterns list):
 
-- **All imports correct.** `import { test, expect } from "@playwright/test"`. Page objects imported by path from `./pages/<name>.page`. Fixtures from `./fixtures/<name>.fixture`. No unused imports.
+- **All imports correct (v0.2.0 qa-master).** Specs use `import { test, expect } from "@fixtures/base.fixture"` — NEVER `@playwright/test` (only `outputs/helper/fixtures/base.fixture.ts` itself may import from `@playwright/test`; `validate-qa-master-conformance.ts` hard-fails on any other usage). Page objects imported via `@page-object/pages/<name>.page` (path alias, not relative). Fixtures via `@fixtures/<name>.fixture`. API wrappers via `@api/<name>.api`. Utilities via `@utilities/<name>`. Test data via `@test-data/<name>`. Logger via `@logger`. No unused imports. No relative `../` parent-dir imports between helper subdirs.
 - **One `expect` per logical assertion.** Don't chain unrelated checks into one assertion. Don't smear three asserts into one.
 - **Test titles use verb phrases** ("opens checkout when cart has items"), not "should..." (per `test-organization`).
 - **Max 2 describe levels.** If the plan asked for more, that's a plan bug — flag it in the report and use 2.
