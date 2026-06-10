@@ -1,0 +1,77 @@
+{
+  "inputBasename": "HistoryJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "browser history navigation leaves the URL on the third page @positive",
+      "userAction": "Navigate to navigation1.html, then navigation2.html, then navigation3.html. Call goBack(), goForward(), reload() in sequence. Assert the final URL matches navigation3.html.",
+      "expectedAssertions": [
+        "after goBack() + goForward() + reload(): page URL matches /\\/navigation3\\.html$/"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.get(firstPage)",
+      "target": "await page.goto('/navigation1.html')",
+      "confidence": "high",
+      "notes": "Direct equivalent; URL becomes relative once baseURL is configured in playwright.config.ts"
+    },
+    {
+      "original": "driver.navigate().to(secondPage)",
+      "target": "await page.goto('/navigation2.html')",
+      "confidence": "high",
+      "notes": "navigate().to() maps directly to page.goto() in Playwright"
+    },
+    {
+      "original": "driver.navigate().to(thirdPage)",
+      "target": "await page.goto('/navigation3.html')",
+      "confidence": "high",
+      "notes": "Same as above"
+    },
+    {
+      "original": "driver.navigate().back()",
+      "target": "await page.goBack()",
+      "confidence": "high",
+      "notes": "1:1 API equivalent"
+    },
+    {
+      "original": "driver.navigate().forward()",
+      "target": "await page.goForward()",
+      "confidence": "high",
+      "notes": "1:1 API equivalent"
+    },
+    {
+      "original": "driver.navigate().refresh()",
+      "target": "await page.reload()",
+      "confidence": "high",
+      "notes": "1:1 API equivalent"
+    },
+    {
+      "original": "assertThat(driver.getCurrentUrl()).isEqualTo(thirdPage)",
+      "target": "await expect(page).toHaveURL(/\\/navigation3\\.html$/)",
+      "confidence": "med",
+      "notes": "Regex form chosen for environment-agnostic matching; absolute string form is an acceptable alternative if baseURL is always the demo domain. See Q2 and hallucination-defense pin 1."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Final URL assertion after history traversal",
+      "assumedLocator": "await expect(page).toHaveURL(/\\/navigation3\\.html$/)",
+      "sourceLocator": "assertThat(driver.getCurrentUrl()).isEqualTo(thirdPage)",
+      "whyComment": "Q2 unresolved: absolute vs relative URL assertion form — regex chosen to allow any baseURL prefix.",
+      "reviewerFallback": "If playwright.config.ts baseURL is always 'https://bonigarcia.dev/selenium-webdriver-java/', replace with await expect(page).toHaveURL('https://bonigarcia.dev/selenium-webdriver-java/navigation3.html') for exact parity with the source."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -6,
+    "locDelta": -7,
+    "antiPatternCoverage": "6/6"
+  }
+}
