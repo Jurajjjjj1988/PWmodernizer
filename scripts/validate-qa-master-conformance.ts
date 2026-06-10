@@ -237,21 +237,43 @@ function checkLocatorDescribe(rootAbs: string, file: string): Violation[] {
   return out;
 }
 
+/** Extract the balanced `expect(...)` argument list starting at the first `expect(` in `text`.
+ *
+ * Handles nested parens (e.g. `expect(this.page.getByText(name), '[LABEL] WHY').toBe(true)`)
+ * by tracking paren depth — the prior regex-only approach captured up to the FIRST `)`,
+ * which on the example above stopped at `getByText(name)`'s closing paren, missing the
+ * message string entirely (false-positive missing-label flag).
+ *
+ * Returns the argument substring (between the matched parens) or null when no balanced
+ * `expect(...)` is found in the input. */
+function extractExpectArgs(text: string): string | null {
+  const start = text.search(/\bexpect\(/);
+  if (start < 0) return null;
+  let i = start + "expect(".length;
+  let depth = 1;
+  const argsStart = i;
+  while (i < text.length && depth > 0) {
+    const ch = text[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    i++;
+  }
+  if (depth !== 0) return null; // unbalanced — give up gracefully
+  return text.slice(argsStart, i - 1);
+}
+
 /** Check 4 — `expect()` inside page methods must take a `[LABEL]` message arg. */
 function checkExpectLabel(rootAbs: string, file: string): Violation[] {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
   const out: Violation[] = [];
-  // Heuristic: any `expect(<args>).` call where <args> doesn't end with `,` followed
-  // by a string literal containing `[`. The strict regex catches the canonical form.
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
     if (!/\bexpect\(/.test(line)) continue;
-    // Multi-line: grab up to 4 lines forward, strip whitespace, find expect(...)`.
-    const window = lines.slice(i, Math.min(i + 4, lines.length)).join(" ");
-    const m = /\bexpect\(([^)]*)\)/.exec(window);
-    if (!m?.[1]) continue;
-    const args = m[1];
+    // Multi-line: grab up to 6 lines forward (covers the wrap-args/wrap-message form).
+    const window = lines.slice(i, Math.min(i + 6, lines.length)).join(" ");
+    const args = extractExpectArgs(window);
+    if (args == null) continue;
     // Accept either: comma + message arg containing `[LABEL] ...` or `\`[LABEL_X]\` ...`
     // Detect "presence of a 2nd arg that is a backtick or quoted string with [ inside".
     const hasLabel = /,\s*["'`][^"'`]*\[/.test(args);

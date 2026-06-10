@@ -54,6 +54,36 @@ export default [
       // TypeScript anti-patterns — generate.md hard rules forbid `any` and `as unknown as`.
       '@typescript-eslint/no-explicit-any': 'error',
       'no-console': 'error',
+      // qa-master v0.2.0 architecture rules — first-class ESLint enforcement so
+      // the validate step catches violations BEFORE the conformance gate, giving
+      // Sonnet's fix-lint-errors retry a clear actionable error.
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: '@playwright/test',
+          message: 'KB qa-master/architecture/import-source: specs must import test+expect from @fixtures/base.fixture (the single spec-layer source).',
+        }],
+      }],
+      'no-restricted-syntax': ['error', {
+        selector: "CallExpression[callee.object.name='page'][callee.property.name='goto']",
+        message: 'KB qa-master/architecture/page-goto-in-spec: navigation lives on the Page (pageObject.open()) — specs must not call page.goto().',
+      }],
+    },
+  },
+  {
+    // Legacy v0.1.x specs from before the qa-master rewrite. Exempt from the
+    // v0.2.0 import / page.goto discipline — they predate the architecture and
+    // are not under active maintenance. New migrations land in the qa-master
+    // shape and these rules apply to them.
+    files: [
+      'outputs/tests/add-cookies-jupiter-test.spec.ts',
+      'outputs/tests/explicit-wait-jupiter-test.spec.ts',
+      'outputs/tests/fluent-wait-jupiter.spec.ts',
+      'outputs/tests/using_selenium_tests.spec.ts',
+      'outputs/tests/playwright.config.ts', // the config file itself needs @playwright/test
+    ],
+    rules: {
+      'no-restricted-imports': 'off',
+      'no-restricted-syntax': 'off',
     },
   },
   {
@@ -64,6 +94,7 @@ export default [
       'examples/**',
       'outputs/plans/**',
       'outputs/reports/**',
+      'outputs/helper/**', // helpers can legitimately import @playwright/test (expect, types)
       'scripts/**',
       '**/*.d.ts',
     ],
