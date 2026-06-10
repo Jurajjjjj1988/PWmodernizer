@@ -385,7 +385,7 @@ jobs:
           mkdir -p outputs/.usage
           claude \
             --model claude-sonnet-4-6 \
-            --max-turns 30 \
+            --max-turns 40 \
             --print \
             --output-format stream-json \
             --verbose \
