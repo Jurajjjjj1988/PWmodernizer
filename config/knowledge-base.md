@@ -3396,6 +3396,151 @@ extends this to ban `@playwright/test` outside the fixture file too.
 pure; testing them is cheap; not testing them means the spec inherits their
 bugs invisibly. ARCHITECTURE.md §3.3.
 
+### qa-master/page-object/click-without-assertion
+
+**Smell**: a page-object method's last statement is `await this.<locator>.click();`
+with no follow-up `expect(...)`. The caller can't tell whether the click did
+anything; failures surface in the next method, far from the cause.
+**Fix**: every action ends with the assertion that proves the action took effect
+(`await expect(this.textConfirmation, '[LABEL] WHY').toBeVisible()`). Per
+`helper/page-object/CLAUDE.md`: "Never end a method on click() — assert after."
+`validate-qa-master-conformance.ts` emits: `Page method ends on .click() with
+no following assertion — KB qa-master/page-object/click-without-assertion`.
+
+### qa-master/page-object/no-try-catch
+
+**Smell**: `try { ... } catch (e) { ... }` inside a `*.page.ts` or `*.block.ts`.
+**Fix**: page objects must not swallow errors. Playwright's web-first assertions
+already auto-retry; a `try/catch` either masks a real flake or duplicates that
+retry. Let the failure propagate so the spec sees the real cause.
+`validate-qa-master-conformance.ts` emits: `try/catch in page/block — KB
+qa-master/page-object/no-try-catch`.
+
+### qa-master/page-object/no-get-accessor
+
+**Smell**: `get buttonSubmit(): Locator { return this.page.getByRole(...); }` —
+a getter returning a locator.
+**Fix**: locators are `readonly` fields — eager for static elements, arrow-function
+for parameterised ones. Getters re-evaluate on every access (no caching) and
+break the "every locator has a `.describe()` label" contract.
+`validate-qa-master-conformance.ts` emits: `get <name>() returns a locator — KB
+qa-master/page-object/no-get-accessor`.
+
+### qa-master/page-object/locator-in-method
+
+**Smell**: a page method declares `const x = this.page.getByRole(...)` to use a
+locator on the fly.
+**Fix**: every locator the page object knows about belongs as a `readonly` field
+on the class (with a `.describe()` label). Method bodies act on existing fields;
+they don't build new locators ad-hoc. Parameterised locators are arrow-function
+fields, not inline `const`s.
+`validate-qa-master-conformance.ts` emits: `Locator built inside method body —
+KB qa-master/page-object/locator-in-method`.
+
+### qa-master/page-object/locator-priority
+
+**Smell**: `this.page.locator('.product-name')` or `this.page.locator('//div[@id="foo"]')` —
+a bare CSS / XPath selector when a higher-priority `getBy*` would do.
+**Fix**: selector priority for qa-master is
+`getByTestId` → `getByRole` → `getByLabel` → `getByText` → `getByPlaceholder` → CSS → XPath.
+The `.locator()` fallback is a last resort after the four `getBy*` paths have
+been exhausted. Per `helper/page-object/CLAUDE.md`.
+`validate-qa-master-conformance.ts` emits: `Bare CSS/XPath locator '<sel>' — KB
+qa-master/page-object/locator-priority`.
+
+### qa-master/utilities/verb-prefix
+
+**Smell**: `helper/utilities/prices.ts` exports `cents(x: string): number` — a
+noun-named function in a utility module.
+**Fix**: per `helper/utilities/CLAUDE.md`: "Verb-prefix names: parse*, get*,
+calculate*, verify*, generate*, normalize*". The verb prefix makes call sites
+read as actions (`parsePrices(rows)`) and pairs naturally with the
+"Grab → Parse → Assert" three-layer separation.
+`validate-qa-master-conformance.ts` emits: `Exported utility '<name>' has no
+verb prefix — KB qa-master/utilities/verb-prefix`.
+
+### qa-master/actions/page-param
+
+**Smell**: `export async function signInAndAddToCart(email: string, sku: string): Promise<void>` —
+an action whose first argument is not a destructured object containing `page`.
+**Fix**: per `helper/actions/CLAUDE.md`: "Signature: destructure
+`{ page, ...params }`". Every action receives the Playwright `page` (and any
+other dependencies) as a destructured-object first arg so callers can extend
+without re-ordering positional args.
+`validate-qa-master-conformance.ts` emits: `Action '<name>' first param is not
+a destructured object including \`page\` — KB qa-master/actions/page-param`.
+
+### qa-master/actions/cross-page-only
+
+**Smell**: `helper/actions/account-rename.ts` constructs only one
+`new AccountsPage(page)` — a single-page flow disguised as an action.
+**Fix**: actions are for **cross-page** (vertical) flows that compose 2+ page
+objects, or for flows shared across multiple specs. Single-page logic stays on
+the page object. Per `helper/actions/CLAUDE.md`: "Create one when 2+ page
+objects are involved or a flow is shared setup across files."
+`validate-qa-master-conformance.ts` emits: `Action constructs only 1 page
+object (<Class>) — KB qa-master/actions/cross-page-only`.
+
+### qa-master/runtime/route-in-spec
+
+**Smell**: `await page.route('**/api/payments', …)` appearing directly in a
+spec or a page object.
+**Fix**: third-party / network mocking is a fixture concern (browser-context
+level, set up once across the suite), not a per-spec ad-hoc inline call.
+Centralise the route handler in `helper/fixtures/*.fixture.ts` so every test
+inherits a deterministic network surface.
+`validate-qa-master-conformance.ts` emits: `page.route() outside fixtures — KB
+qa-master/runtime/route-in-spec`.
+
+### qa-master/specs/test-name-format
+
+**Smell**: `test('Sign-in works', …)` or `test('should sign in', …)`.
+**Fix**: titles must match `^\[[^\]]+\]\s*-\s*Check\b` — i.e. start with a
+bracketed ticket id, then ` - Check that <user-perceivable outcome>`. Pairs
+with the existing `qa-master/architecture/should-test-name` rule but enforces
+the structural form (ticket id + "Check") in addition to banning "should".
+`validate-qa-master-conformance.ts` emits: `Test title '<title>' not in
+'[TICKET-ID] - Check that ...' form — KB qa-master/specs/test-name-format`.
+
+### qa-master/specs/single-describe
+
+**Smell**: a `*.spec.ts` file declaring two or more `test.describe(...)` blocks.
+**Fix**: one describe per feature, one feature per file. Multiple describes in
+one file signal a file that should be split into siblings under the same
+feature folder.
+`validate-qa-master-conformance.ts` emits: `Spec has <N> test.describe()
+blocks — KB qa-master/specs/single-describe`.
+
+### qa-master/specs/no-nested-steps
+
+**Smell**: `test.step('Outer', async () => { await test.step('Inner', …); })`.
+**Fix**: each `test.step()` is ONE action → ONE assertion. Nesting muddies that
+contract and produces useless trace timelines. Refactor inner steps into
+sibling steps (or into the page object method).
+`validate-qa-master-conformance.ts` emits: `Nested test.step() — KB
+qa-master/specs/no-nested-steps`.
+
+### qa-master/files/kebab-case
+
+**Smell**: a file emitted under `outputs/` named `signInPage.ts` or
+`order_history.spec.ts` — uppercase or underscore in the stem.
+**Fix**: kebab-case throughout (`sign-in-page.ts`, `order-history.spec.ts`).
+The convention matches the qa-master reference and the path-alias map.
+`validate-qa-master-conformance.ts` emits: `Filename '<base>' contains
+uppercase or underscore — KB qa-master/files/kebab-case`.
+
+### qa-master/architecture/relative-imports-sibling
+
+**Smell**: `from "./checkout.api"` from a helper file — a sibling-dir relative
+import between two different concerns.
+**Fix**: extends `qa-master/architecture/relative-imports` (which already bans
+parent-dir `../...`). Same-dir `./...` imports across helper concerns also
+bypass the path-alias surface and make refactors brittle. Use the alias
+(`@page-object`, `@api`, `@fixtures`, `@test-data`, …) for every cross-helper
+reference, even within the same folder.
+`validate-qa-master-conformance.ts` emits: `Sibling relative import (./…) —
+KB qa-master/architecture/relative-imports-sibling`.
+
 ## Authoritative references
 
 - Playwright docs — [playwright.dev/docs](https://playwright.dev/docs/intro)
