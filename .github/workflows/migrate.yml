@@ -834,13 +834,22 @@ jobs:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
+            // Pass the Stage 2 code branch as pr_branch so verify can read the
+            // generated spec + helpers BEFORE they merge to main. Without this,
+            // verify checks out main and both subagents return START OVER ("no
+            // outputs/tests/<basename>.spec.ts exists") — a spurious verdict,
+            // since Stage 2 just emitted those files on the PR branch.
+            // The branch name is deterministic: peter-evans/create-pull-request
+            // builds it as `migrator/code-${INPUT_BASENAME}`.
+            const inputBasename = '${{ needs.guard.outputs.input_basename }}';
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'verify.yml',
               ref: 'main',
               inputs: {
-                input_basename: '${{ needs.guard.outputs.input_basename }}',
+                input_basename: inputBasename,
                 generate_confidence: '${{ needs.generate.outputs.confidence }}',
+                pr_branch: `migrator/code-${inputBasename}`,
               },
             });
