@@ -27,7 +27,15 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,
-  reporter: process.env.CI ? "github" : "list",
+  // Reporter stack (adopted from qa-master):
+  //   - list      → readable per-test progress locally and in CI logs
+  //   - html      → on-disk report for post-run debugging (never auto-opens)
+  //   - github    → CI annotations on PRs (only when process.env.CI is set)
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    ...(process.env.CI ? [["github"] as const] : []),
+  ],
   timeout: 30_000,
   expect: { timeout: 5_000 },
   use: {
