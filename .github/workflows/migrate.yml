@@ -307,6 +307,7 @@ jobs:
              - helper/fixtures/base.fixture.ts — the ONLY file allowed to import from @playwright/test
              - helper/api/accounts.api.ts — API wrappers for data prep
              - helper/utilities/logger.ts + helper/test-data/urls.ts — utility/test-data shape
+             - helper/<layer>/CLAUDE.md × 7 — per-layer discipline (api / fixtures / page-object / test-data / utilities / actions / browser) — read the one matching each file you write
              - docs/ARCHITECTURE.md + docs/CLAUDE.md — full architecture reasoning
           6. $INPUT_PATH — the source to migrate
 

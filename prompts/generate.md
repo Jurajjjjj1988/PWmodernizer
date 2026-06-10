@@ -34,6 +34,14 @@ Target architecture is qa-master (`config/migration-rules.md` §1). Output is al
 - `examples/reference/qa-master/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`; the only file allowed to import from `@playwright/test`
 - `examples/reference/qa-master/helper/api/accounts.api.ts` — the data-prep wrapper pattern: typed functions over HTTP, never called from a Page object
 - `examples/reference/qa-master/tests/account.sign-in.spec.ts` — the canonical spec: imports `test`/`expect` from `@fixtures/base.fixture`, uses injected page-object fixtures, asserts via UI
+- Per-layer rules — `examples/reference/qa-master/helper/<layer>/CLAUDE.md` × 7 — read the one matching each file you write:
+  - `api/CLAUDE.md` — one wrapper per endpoint, typed functions over HTTP, never called from a Page
+  - `fixtures/CLAUDE.md` — `base.fixture.ts` is the ONLY `@playwright/test` importer; extension pattern for injecting Pages
+  - `page-object/CLAUDE.md` — no-constructor / readonly fields / `.describe('[LABEL] …')` / type-prefix locator names / `[LABEL]` `expect` messages; Pages vs Blocks split
+  - `test-data/CLAUDE.md` — constants only (URLs / ids / `LABEL_*` / cookies / TestRail); no logic
+  - `utilities/CLAUDE.md` — pure functions only (no browser, no I/O); verb-prefix names; 100% unit coverage
+  - `actions/CLAUDE.md` — cross-page (2+ Pages) composed flows; `{ page, ...params }` signature
+  - `browser/CLAUDE.md` — functions that need `Page` but are not page objects (data-layer readers, locator helpers)
 
 Read these files BEFORE you write any output. Your generated POMs, fixtures, and specs should look like they would be at home in this directory. If they don't, you've drifted — start over.
 

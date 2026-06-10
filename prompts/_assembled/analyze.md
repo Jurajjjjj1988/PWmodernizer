@@ -14,8 +14,9 @@ Before doing anything else, read these files end-to-end:
 
 1. **`config/knowledge-base.md`** — the full anti-pattern catalog. Every anti-pattern in the source must be matched to an entry here and cited by ID.
 2. **`config/migration-rules.md`** — the target Playwright TypeScript conventions, the plan schema (see §9), and the locator priority order.
-3. **The input file** — passed to you as `inputs/<framework>/<name>/<file>`. Read it line-by-line, not just skim the top.
-4. **Sibling files in the input directory** — there may be a `README.md` describing intent, a `package.json` showing dependencies, or supporting files (fixtures, page objects, config) you need to migrate together.
+3. **`examples/reference/qa-master/helper/<layer>/CLAUDE.md` × 7** — per-layer discipline (api / fixtures / page-object / test-data / utilities / actions / browser). Read the layer files that match the structural decisions you're about to propose in §5 — they bind the plan's `requiredApi` / `requiredPages` / `requiredFixtures` / `requiredUtilities` / `requiredActions` / `requiredTestData` arrays to the rules Stage 2 will be checked against (e.g. when planning API wrappers, `helper/api/CLAUDE.md` says one wrapper per endpoint, typed, never called from a Page).
+4. **The input file** — passed to you as `inputs/<framework>/<name>/<file>`. Read it line-by-line, not just skim the top.
+5. **Sibling files in the input directory** — there may be a `README.md` describing intent, a `package.json` showing dependencies, or supporting files (fixtures, page objects, config) you need to migrate together.
 
 If any of these files is missing, **stop and emit a plan that says "BLOCKED: missing config/knowledge-base.md"** etc. Do not proceed with assumptions.
 
