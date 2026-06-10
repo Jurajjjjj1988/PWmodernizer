@@ -120,10 +120,7 @@ export default tseslint.config(
     // are not under active maintenance. New migrations land in the qa-master
     // shape and these rules apply to them.
     files: [
-      'outputs/tests/add-cookies-jupiter-test.spec.ts',
-      'outputs/tests/explicit-wait-jupiter-test.spec.ts',
-      'outputs/tests/fluent-wait-jupiter.spec.ts',
-      'outputs/tests/using_selenium_tests.spec.ts',
+      'outputs/tests/_legacy-v0.1.x/**/*.ts',
       'outputs/tests/playwright.config.ts', // the config file itself needs @playwright/test
     ],
     rules: {
