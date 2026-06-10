@@ -22,6 +22,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "**/*.spec.ts",
+  // Exclude v0.1.x archived specs (kept for history in _legacy-v0.1.x/).
+  testIgnore: "**/_legacy-v0.1.x/**",
   // Migrated tests never use parallel fixtures; default is OK.
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
