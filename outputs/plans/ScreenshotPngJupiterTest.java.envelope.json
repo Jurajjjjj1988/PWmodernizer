@@ -1,0 +1,47 @@
+{
+  "inputBasename": "ScreenshotPngJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "navigates to the practice site and verifies it renders @positive @e2e",
+      "userAction": "Open the Selenium WebDriver practice site home page and confirm the main heading is visible.",
+      "expectedAssertions": [
+        "After navigation: the page's main heading is visible (exact heading text TBD — see Q3 in plan)"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.get(\"https://bonigarcia.dev/selenium-webdriver-java/\")",
+      "target": "page.goto('/selenium-webdriver-java/')",
+      "confidence": "high",
+      "notes": "Mechanical URL → relative path translation; baseURL set to 'https://bonigarcia.dev' via process.env.BASE_URL in playwright.config.ts (see Q4 in plan)."
+    },
+    {
+      "original": "assertThat(destination).exists()",
+      "target": "page.getByRole('heading', { level: 1 })",
+      "confidence": "low",
+      "notes": "Source asserts file existence only — not a UI assertion. Migration must add a user-perceivable assertion. Heading text and element type unknown without DOM inspection; see pin 1 and Q1, Q3 in plan."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Practice site main heading",
+      "assumedLocator": "page.getByRole('heading', { level: 1 })",
+      "sourceLocator": "assertThat(destination).exists()",
+      "whyComment": "Q3 unresolved: heading element type and text not confirmed from DOM inspection — source only asserted screenshot file existence.",
+      "reviewerFallback": "Inspect DOM at https://bonigarcia.dev/selenium-webdriver-java/ and replace with page.getByRole('heading', { name: '<exact text>', level: 1 }) or supply a data-testid."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -4,
+    "locDelta": -42,
+    "antiPatternCoverage": "4/4"
+  }
+}
