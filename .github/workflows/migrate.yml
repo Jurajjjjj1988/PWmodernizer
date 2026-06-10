@@ -528,10 +528,43 @@ jobs:
 
           $INVENTORY_BLOCK
 
-          Only modify files under outputs/tests/. Do NOT regenerate the
-          entire spec — surgical fixes only. If a lint error reveals a
-          plan/code conflict (e.g., plan said use getByRole but linter says
-          raw locator), prefer the plan's intent.
+          Surgical fixes only — do NOT regenerate the entire spec.
+
+          ## qa-master baseline overrides plan when they conflict
+
+          If lint errors include either:
+          - \`KB qa-master/architecture/page-goto-in-spec\` (\`no-restricted-syntax\` on \`page.goto\`)
+          - \`KB qa-master/architecture/import-source\` (\`no-restricted-imports\` on \`@playwright/test\`)
+
+          You MUST create the qa-master baseline scaffolding for THIS migration,
+          even if the plan envelope's \`requiredPOMs\` is empty. The plan is a
+          v0.1.x-shaped baseline; qa-master conformance is the v0.2.0 contract.
+
+          Concretely:
+          1. Create \`outputs/helper/page-object/pages/<kebab>.page.ts\` —
+             \`PageClass<Name>\` extends BasePage with \`readonly url\` set from
+             a constant in \`outputs/helper/test-data/<kebab>.ts\` (mutate or create);
+             no own constructor; \`waitForPageLoad()\` asserts at least one anchor
+             locator is visible (use \`expect(this.<locator>, '[LABEL] WHY').toBeVisible()\`).
+          2. Extend \`outputs/helper/fixtures/base.fixture.ts\` with a fixture
+             entry: \`<name>Page: async ({ page }, use) => use(new PageClassName(page))\`.
+          3. In the spec: switch \`async ({ page })\` to \`async ({ <name>Page })\`,
+             replace \`page.goto(...)\` with \`await <name>Page.open()\`.
+
+          Do NOT silently fix it — write the helper files. The plan's
+          \`requiredPOMs: []\` is informational, not a ban; qa-master mandates
+          at least one PageClass per spec.
+
+          ## Other plan/code conflicts
+
+          For any other lint error revealing a plan/code conflict (e.g., plan
+          said use getByRole but linter says raw locator), prefer the plan's
+          intent.
+
+          ## Modification scope
+
+          You MAY modify files under both \`outputs/tests/\` AND \`outputs/helper/\`
+          (helpers needed to satisfy the qa-master overrides above).
           EOF
           )
           claude \
