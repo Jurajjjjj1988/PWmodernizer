@@ -28,6 +28,15 @@ If the envelope JSON is missing or unreadable, **stop**. Emit `outputs/reports/<
 
 Target architecture is qa-master (`config/migration-rules.md` §1). Output is always a layered tree, never a single bare spec. Stage 1 declares every file you must emit in the plan's §5 summary table; the envelope JSON's `required*` arrays MUST match what you actually write.
 
+**Style anchor — read before generating**: `examples/reference/qa-master/` contains real-company Playwright TypeScript files demonstrating EXACTLY the shape your output should take. Specifically:
+- `examples/reference/qa-master/helper/page-object/basepage.ts` — the abstract base every Page extends (NO own constructor in subclasses)
+- `examples/reference/qa-master/helper/page-object/accounts.page.ts`, `cart.page.ts` — canonical PageClass shape: readonly fields, `.describe('[LABEL] …')` on every locator, type-prefix names, `[LABEL]` message in every `expect()` inside page methods
+- `examples/reference/qa-master/helper/fixtures/base.fixture.ts` — single import source for `test`/`expect`; the only file allowed to import from `@playwright/test`
+- `examples/reference/qa-master/helper/api/accounts.api.ts` — the data-prep wrapper pattern: typed functions over HTTP, never called from a Page object
+- `examples/reference/qa-master/tests/account.sign-in.spec.ts` — the canonical spec: imports `test`/`expect` from `@fixtures/base.fixture`, uses injected page-object fixtures, asserts via UI
+
+Read these files BEFORE you write any output. Your generated POMs, fixtures, and specs should look like they would be at home in this directory. If they don't, you've drifted — start over.
+
 Every emitted file starts with the attribution comment:
 ```ts
 // Migrated from <source-framework> on <YYYY-MM-DD> by Migrator.

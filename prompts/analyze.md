@@ -122,6 +122,8 @@ If your locator table contains zero MED/LOW rows (rare, only happens on subtract
 
 The target architecture is qa-master (see `config/migration-rules.md` §1). Stage 2 always emits a layered output — even trivial single-test migrations land in `outputs/tests/<feature>.spec.ts` with `test`/`expect` from `@fixtures/base.fixture` and an injected page object. The structural-decisions section of the plan enumerates which files Stage 2 MUST create. Stage 2 fails if the envelope's `requiredPages` / `requiredBlocks` / etc. arrays reference a file Stage 2 doesn't write.
 
+**Style anchor — open this before planning**: `examples/reference/qa-master/` contains real-company Playwright TypeScript files demonstrating the EXACT shape Stage 2 generates against. Look at `helper/page-object/accounts.page.ts` for the canonical PageClass pattern (no-constructor, readonly fields with `.describe('[LABEL] …')`, type-prefix names, `[LABEL]` expects in page methods), `helper/fixtures/base.fixture.ts` for the single import source, and `tests/account.sign-in.spec.ts` for the canonical spec. Your plan should propose a file structure that, after Stage 2 executes it, lands code that would belong in this reference tree.
+
 For each input, decide what goes in which directory:
 
 #### 5a — Pages (`outputs/helper/page-object/pages/<name>.page.ts`)
