@@ -5,11 +5,11 @@
   "scenarios": [
     {
       "id": "1.1",
-      "title": "waits for landscape image to load and verifies its source attribute",
-      "userAction": "Navigate to the loading-images demo page and wait for the landscape image element to appear in the DOM with a src attribute containing 'landscape'.",
+      "title": "loading images page shows landscape image with correct src @positive @e2e",
+      "userAction": "Navigate to the loading-images demo page and wait up to 10 seconds for the landscape image element to load, verifying its src attribute contains 'landscape' (case-insensitive).",
       "expectedAssertions": [
-        "After page load: element #landscape is present in the DOM",
-        "After page load: #landscape src attribute contains the substring 'landscape' (case-insensitive)"
+        "Landscape image element is attached to the DOM (auto-waited by toHaveAttribute)",
+        "Landscape image src attribute value matches /landscape/i within { timeout: 10_000 }"
       ]
     }
   ],
@@ -18,25 +18,25 @@
   "locatorTable": [
     {
       "original": "By.id(\"landscape\")",
-      "target": "page.getByAltText(/landscape/i)",
+      "target": "page.getByRole(\"img\", { name: /landscape/i })",
       "confidence": "med",
-      "notes": "Element id and page context (loading-images educational demo, bonigarcia author) strongly suggest <img alt='landscape'>. Fallback if alt text absent or differs: page.locator('#landscape') at HIGH confidence (mechanical By.id -> CSS-id per KB hallucination rule 1). Reviewer must resolve Q3 before Stage 2 runs."
+      "notes": "An <img> element's ARIA role is 'img'; its computed accessible name is its alt attribute. getByRole('img', { name: /landscape/i }) is tier-1 and equivalent to getByAltText(/landscape/i) for images. Strong circumstantial evidence: element ID and Java variable are both 'landscape', consistent with bonigarcia educational demos that use descriptive alt text. Unconfirmed from source code alone — reviewer must resolve Q3. Fallback if alt absent or mismatched: page.locator('#landscape') with WHY-comment 'Q3 unresolved — alt text not confirmed'."
     }
   ],
   "hallucinationDefensePins": [
     {
       "pinId": 1,
       "elementDescription": "landscape image element",
-      "assumedLocator": "page.getByAltText(/landscape/i)",
+      "assumedLocator": "page.getByRole(\"img\", { name: /landscape/i })",
       "sourceLocator": "By.id(\"landscape\")",
-      "whyComment": "Q3 unresolved — alt text inferred from element id and bonigarcia demo conventions; not confirmed by DOM inspection",
-      "reviewerFallback": "Inspect https://bonigarcia.dev/selenium-webdriver-java/loading-images.html source. If <img id='landscape' alt='landscape'> confirmed, keep getByAltText. If alt is absent or differs, switch to page.locator('#landscape') and add inline WHY-comment explaining why role/label/altText hierarchy is unavailable."
+      "whyComment": "Q3 unresolved — alt text not confirmed",
+      "reviewerFallback": "Open https://bonigarcia.dev/selenium-webdriver-java/loading-images.html in DevTools and inspect <img id='landscape'>. If alt attribute contains 'landscape', use getByRole('img', { name: /landscape/i }). If alt is absent or different, Stage 2 MUST use page.locator('#landscape') with the verbatim WHY-comment 'Q3 unresolved — alt text not confirmed'. Any silent promotion of the MED-confidence locator without reviewer DOM confirmation is a block-severity hallucination failure."
     }
   ],
   "expectedMetrics": {
     "selectorQualityScore": 1.0,
     "smellCountDelta": -7,
-    "locDelta": -50,
+    "locDelta": -40,
     "antiPatternCoverage": "7/7"
   }
 }
