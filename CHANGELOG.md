@@ -4,6 +4,42 @@ All notable changes per release.
 
 Format: Keep a Changelog (https://keepachangelog.com), SemVer.
 
+## [v0.1.1] — 2026-06-10 — verify-pipeline closure (5 calibration fixes)
+
+**Theme**: end-to-end verify CANDOR pipeline closure. The v0.1.0 hardened generate.md prompt + cost monitoring landed, but verify-run calibration on PR #13 (PromptJupiter) exposed 5 real bugs that turned 4 verify runs into fake "regressions". Each iteration pinned the next bug.
+
+### Added
+
+- **`prompts/generate.md` Bullet 12 — strengthened** (PR #41): two new sub-rules — (a) report's `Output:` filename MUST match emitted file (PR #13 anti-example named); (b) `dialog.message()`/`dialog.accept()` are NOT web-first even inside `expect().toBe()` (PR #13 falsified-100% case named).
+- **`prompts/generate.md` Bullet 15** (new, PR #41): dialog-handler expect anti-pattern. `expect()` inside `page.once('dialog', …)` before `dialog.accept()` causes confusing actionTimeout instead of clear assertion mismatch when expect throws. Pattern: capture in closure, assert after the click. Side-by-side ❌/✅ examples.
+- **`scripts/validate-report-metrics.ts`** (new, 244 LOC, PR #41): defense-in-depth automatic gate cross-checking the report's claimed filename + LOC against actually-emitted spec. Catches structural copy-paste (PR #13 root cause: report referenced `using_selenium_tests.spec.ts` for an input named `PromptJupiterTest.java`). Wired into `migrate.yml` after plan-vs-code coverage.
+- **`.github/workflows/verify.yml` `pr_branch` input** (PR #40): optional dispatch input to checkout an unmerged Stage 2 PR (e.g. `migrator/code-<name>`). Default `'main'` preserves the post-merge-audit design. Without this, manual verify dispatch against an unmerged PR finds no spec and both Opus lenses correctly emit START OVER.
+- **`config/migration-rules.md` §"CANDOR consensus rule"** (PR #42): max-severity tally documented and applied — `FIX FIRST + FIX FIRST → FIX FIRST` (no lens wants regen), not START OVER.
+
+### Fixed
+
+- **`tee | pipefail` SIGPIPE death** during Opus stream-json verify runs (PR #39). `set -o pipefail` (bash default in GH Actions) combined with `tee /tmp/...events.ndjson` killed Opus after ~7s when the GH Actions terminal couldn't consume verbose stream-json events fast enough. Replaced `| tee FILE` with `> FILE` direct redirect in all 3 workflows (plan/migrate/verify). Live CI log loses turn-by-turn LLM stream, but the events file is what cost-capture needs.
+- **CANDOR tally over-rejection** (PR #42): legacy tally counted `SHIP_COUNT` only, treating both lenses on FIX FIRST as "0/2 SHIP IT → START OVER" (and firing wasteful auto-regen). New max-severity consensus: take the highest verdict across lenses. PR #13 verify run 27240945253 hit this exactly — both lenses gave FIX FIRST on report-metric accuracy (no block findings on the spec itself), auto-regen fired anyway. Applied to `scripts/verify-tally.ts`, `verify.yml` tally shell, `prompts/_fragments/verdict-ladder.md`, and `tools/calibrate-pipeline/fixtures/verify-tally/good-03-both-fix/expected.txt`.
+- **`scripts/evaluate.ts` web-first-rate undercount** (this commit): the legacy sync-probe regex only matched `expect(X.text()).toBe()` direct-property-call shapes, missing plain `expect(variable).toBe()` patterns. Bullet 15's `expect(capturedMessage).toBe()` calls were classified as web-first (because they don't appear in the sync regex), inflating the rate to 100% when actual was 50%. New definition: total `expect(...)` calls = denominator, await-prefixed = numerator. Same denominator used by `nonWebFirstAsserts` smell counter.
+
+### Status snapshot at v0.1.1
+
+- 12 PRs merged on 2026-06-09 + 2026-06-10 across this verify-pipeline closure (#21-#26, #32, #38, #39, #40, #41, #42, plus this evaluator fix).
+- **First verify CANDOR run on hardened-prompt output that produced semantically correct verdict end-to-end**: run 27254507509 returned FIX FIRST overall (SDET + Code Review both FIX FIRST), no auto-regen fired, PR labeled `verify:fix-first`.
+- **Real Playwright runtime validation**: hardened-prompt spec passes 4/4 against live `bonigarcia.dev` SUT (chromium + firefox). Bullet 15 `capturedMessage` closure pattern emitted correctly by Sonnet and runs cleanly.
+- 12 plan PRs still queued for human review (#19, #20, #27-#31, #33-#37) — 10 new bonigarcia ch04/05 inputs across batch 1 + batch 2.
+
+### Bugs found + fixed during today's iteration loop
+
+| # | Bug | Layer | Fix PR |
+|---|---|---|---|
+| 1 | `tee \| pipefail` SIGPIPE killed Opus | Workflow YAML | #39 |
+| 2 | Verify can't checkout PR branches | Workflow YAML | #40 |
+| 3 | Sonnet copy-pasted report filename + falsified web-first | Prompt + script | #41 |
+| 4 | Sonnet wrote in-handler `expect()` (ergonomics) | Prompt | #41 |
+| 5 | CANDOR tally over-rejected 2× FIX FIRST | Workflow + script | #42 |
+| 6 | Evaluator undercounted sync `expect()` calls | Script | this commit |
+
 ## [v0.1.0] — 2026-06-09 — first tagged OSS release
 
 **Theme**: close-out of the CONTINUE.md 5-priority list from the 06-07 snapshot. Lands the Stage 2 calibration fix, the regression-semantic parser repair, the cost-monitoring stack, the OSS community-health files, and the Danger workflow regression that was masking every PR-trigger run.
