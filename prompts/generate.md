@@ -180,10 +180,17 @@ Write exactly this structure to `outputs/reports/<input-basename>.md`:
 - Source file: <relative path>
 - Source LOC: <N>
 - Output LOC: <M> (sum across all produced files)
-- Files produced:
+- Files produced (v0.2.0 qa-master architecture — list every file you wrote):
   - outputs/tests/<input-basename>.spec.ts (<X> LOC)
-  - outputs/tests/pages/<name>.page.ts (<X> LOC) [if applicable]
-  - outputs/tests/fixtures/<name>.fixture.ts (<X> LOC) [if applicable]
+  - outputs/helper/fixtures/base.fixture.ts (<X> LOC) [if created or extended]
+  - outputs/helper/page-object/basepage.ts (<X> LOC) [if created]
+  - outputs/helper/page-object/pages/<name>.page.ts (<X> LOC) [per page in plan]
+  - outputs/helper/page-object/blocks/<name>.block.ts (<X> LOC) [per block in plan]
+  - outputs/helper/api/<name>.api.ts (<X> LOC) [per API in plan]
+  - outputs/helper/actions/<name>.ts (<X> LOC) [per cross-page action in plan]
+  - outputs/helper/utilities/<name>.ts (<X> LOC) [per utility in plan]
+  - outputs/helper/test-data/<name>.ts (<X> LOC) [per test-data file in plan]
+  - outputs/helper/types/{external,internal}/<name>.ts (<X> LOC) [per type file in plan]
   - outputs/reports/<input-basename>.md (this file)
 
 ## Metrics
@@ -287,6 +294,39 @@ These will get your output rejected on PR review (or worse, merged and break tru
     ```
 
     The same rule applies to ANY async event handler where the action depends on the handler completing (`page.on('request')`, `page.on('response')` chains, etc.) — assertions inside a handler that gates a downstream action are an ergonomic failure even when the test still detects the regression.
+
+16. **v0.2.0 qa-master spec discipline — single import source + no `page.goto` in specs.** Stage 2 retest run 27257207504 (PromptJupiter, 2026-06-10) failed the `validate-qa-master-conformance.ts` gate with two `block`-severity violations Sonnet committed despite the v0.2.0 architecture sections of `migration-rules.md` already saying so. Repeated here as hard rules with explicit forbidden examples:
+
+    **(a) Spec imports MUST come from `@fixtures/base.fixture`.** The conformance validator hard-fails on `from '@playwright/test'` in any spec. Only `outputs/helper/fixtures/base.fixture.ts` may import from `@playwright/test` — every spec consumes the re-exported `test` + `expect` through the fixture path alias. Why: per-test page-object injection, API user fixture, cookie injection, start/finish logging. Single source means ONE place to change the contract.
+
+    ```ts
+    // ❌ WRONG — KB qa-master/architecture/import-source — block-severity fail
+    import { test, expect } from "@playwright/test";
+
+    test("opens prompt dialog", async ({ page }) => {
+      await page.goto("/jupiter/prompt");      // ❌ ALSO WRONG — see (b)
+      const heading = page.getByRole("heading", { name: /prompt/i });
+      await expect(heading).toBeVisible();
+    });
+    ```
+
+    ```ts
+    // ✅ CORRECT — qa-master compliant, validator-clean
+    import { test, expect } from "@fixtures/base.fixture";
+
+    test("opens prompt dialog", async ({ promptDialogPage }) => {
+      await test.step("open the prompt dialog page", async () => {
+        await promptDialogPage.open();         // navigation owned by the Page
+      });
+      await test.step("the dialog renders its heading", async () => {
+        await promptDialogPage.expectHeadingVisible();   // [LABEL]-prefixed expect inside the page method
+      });
+    });
+    ```
+
+    **(b) Specs MUST NOT call `page.goto()` directly.** Navigation lives on the Page (`async open() { await this.page.goto(this.url); await this.waitForPageLoad(); }`). Specs never call `page.goto`. The validator hard-fails on it. Why: centralised URL ownership (URLs live in `@test-data/urls`), centralised post-load wait discipline (every Page declares a `waitForPageLoad`), and routing changes don't ripple across every spec.
+
+    **(c) If the plan's required helper files are absent in the inventory, you MUST create them.** Sonnet on the same retest created `outputs/helper/fixtures/base.fixture.ts` but failed to create `outputs/helper/page-object/pages/<name>.page.ts`, then fell back to inline `page.goto()` because the page object it needed didn't exist. The plan's `requiredPages` / `requiredFixtures` / `requiredApi` / etc. are a contract — every listed file MUST be written before the spec that depends on it. Build the helpers first; write the spec last.
 
 ## Tone and style of the generated code
 

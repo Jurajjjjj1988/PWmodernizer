@@ -219,9 +219,15 @@ jobs:
 
           1. prompts/_assembled/generate.md — your task spec (READ FIRST)
           2. $PLAN_PATH — the approved plan; follow it literally
-          3. config/migration-rules.md — style + structure contract
-          4. config/knowledge-base.md — anti-pattern + API translations
-          5. examples/reference/company-style.spec.ts — style anchor
+          3. config/migration-rules.md — style + structure contract (v0.2.0 qa-master target)
+          4. config/knowledge-base.md — anti-pattern + API translations (includes \`qa-master/architecture/*\` KB IDs)
+          5. examples/reference/qa-master/ — real-company style anchor:
+             - tests/account.sign-in.spec.ts — spec shape (single import source = @fixtures/base.fixture)
+             - helper/page-object/basepage.ts + helper/page-object/accounts.page.ts — PageClass discipline
+             - helper/fixtures/base.fixture.ts — the ONLY file allowed to import from @playwright/test
+             - helper/api/accounts.api.ts — API wrappers for data prep
+             - helper/utilities/logger.ts + helper/test-data/urls.ts — utility/test-data shape
+             - docs/ARCHITECTURE.md + docs/CLAUDE.md — full architecture reasoning
           6. $INPUT_PATH — the source to migrate
 
           ## Existing project surface — reuse before inventing
@@ -230,19 +236,45 @@ jobs:
 
           Hard constraint: If a POM or fixture in the inventory matches the
           plan's required POMs/fixtures, REUSE it. Do NOT create a duplicate
-          with a slightly different name (e.g. inventory has \`LoginPage\` →
-          do not introduce \`SignInPage\` or \`LoginPageV2\`). If the plan
+          with a slightly different name (e.g. inventory has \`AccountsPage\` →
+          do not introduce \`SignInPage\` or \`AccountsPageV2\`). If the plan
           explicitly mandates a new POM that overlaps an existing one,
           extend the existing file rather than forking.
 
-          ## Deliverables (write ONLY these files — paths are LITERAL)
+          ## Deliverables — v0.2.0 qa-master architecture (write ONLY these paths)
 
+          Spec (always):
           - outputs/tests/$INPUT_BASENAME — migrated Playwright TS spec
-          - outputs/tests/pages/<name>.page.ts — POM IF plan said extract (under outputs/tests/pages/, NOT outputs/pages/)
-          - outputs/tests/fixtures/<name>.fixture.ts — fixture IF plan said extract (under outputs/tests/fixtures/, NOT outputs/fixtures/)
+            * MUST import \`test\` + \`expect\` from \`@fixtures/base.fixture\` (NEVER \`@playwright/test\`).
+            * MUST call \`pageObject.open()\` for navigation (NEVER \`page.goto()\` directly).
+            * test bodies use \`test.step(...)\` for each scenario phase.
+
+          Helper files (write IF the plan's required* arrays list them — paths are LITERAL):
+          - outputs/helper/fixtures/base.fixture.ts — single source of \`test\` + \`expect\` (the ONLY file allowed to import from @playwright/test). Re-exports both.
+          - outputs/helper/page-object/basepage.ts — abstract BasePage (constructor takes \`readonly page: Page\`; subclasses declare NO own constructor).
+          - outputs/helper/page-object/baseblock.ts — abstract BaseBlock when blocks are needed.
+          - outputs/helper/page-object/pages/<name>.page.ts — \`PageClass<Name>\` extends BasePage with \`readonly\` locator fields; each locator carries \`.describe('[LABEL] ...')\`; every page-method \`expect(...)\` has a \`[LABEL]\` message arg.
+          - outputs/helper/page-object/blocks/<name>.block.ts — when a section reaches ~5+ locators / 3+ methods / 3+ pages.
+          - outputs/helper/api/<name>.api.ts — API wrappers (data prep — NEVER UI-prep).
+          - outputs/helper/actions/<name>.ts — cross-page flows (when the journey crosses 2+ Pages).
+          - outputs/helper/utilities/<verb>-<noun>.ts — pure utilities (verb-prefixed: parse*, get*, calculate*, verify*, generate*).
+          - outputs/helper/test-data/<name>.ts — constants only (URLs, ids, LABEL_* prefixes, cookies).
+          - outputs/helper/types/{external,internal}/<name>.ts — type shapes.
+
+          Import paths inside helper/spec files MUST use the tsconfig path aliases
+          (relative \`../\` imports across helper boundaries are forbidden by the
+          qa-master conformance validator):
+          - @fixtures/base.fixture  → outputs/helper/fixtures/base.fixture
+          - @page-object/...        → outputs/helper/page-object/...
+          - @api/...                → outputs/helper/api/...
+          - @actions/...            → outputs/helper/actions/...
+          - @utilities/...          → outputs/helper/utilities/...
+          - @test-data/...          → outputs/helper/test-data/...
+          - @types/...              → outputs/helper/types/...
+          - @logger                 → outputs/helper/utilities/logger
 
           DO NOT write outputs/reports/<anything>.md — the deterministic report is computed by scripts/evaluate.ts post-validation. Anything you put there is overwritten.
-          DO NOT write outside outputs/tests/. The tsconfig rootDir is outputs/ — files outside that fail typecheck.
+          DO NOT write outside outputs/. The tsconfig rootDir is outputs/; outputs/tests/ AND outputs/helper/ are both inside it.
           DO NOT modify inputs/, config/, or prompts/.
 
           ## Runtime config the generated spec runs against

@@ -2,8 +2,26 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "rootDir": "..",
-    "types": ["node", "@playwright/test"]
+    "baseUrl": "..",
+    "types": ["node", "@playwright/test"],
+    "paths": {
+      "@fixtures/*":     ["helper/fixtures/*"],
+      "@page-object":    ["helper/page-object"],
+      "@page-object/*":  ["helper/page-object/*"],
+      "@api/*":          ["helper/api/*"],
+      "@actions/*":      ["helper/actions/*"],
+      "@browser/*":      ["helper/browser/*"],
+      "@utilities/*":    ["helper/utilities/*"],
+      "@test-data/*":    ["helper/test-data/*"],
+      "@types/*":        ["helper/types/*"],
+      "@logger":         ["helper/utilities/logger"]
+    }
   },
-  "include": ["../tests/**/*.ts", "../fixtures/**/*.ts", "../pages/**/*.ts"],
+  "include": [
+    "../tests/**/*.ts",
+    "../fixtures/**/*.ts",
+    "../pages/**/*.ts",
+    "../helper/**/*.ts"
+  ],
   "exclude": []
 }
