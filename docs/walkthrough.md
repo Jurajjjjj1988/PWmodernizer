@@ -1,202 +1,143 @@
-# End-to-end walkthrough
+# End-to-end walkthrough (v0.2.0 qa-master)
 
-> A real migration, narrated. Uses [PR #6](https://github.com/Jurajjjjj1988/PWmodernizer/pull/6) (plan) → [PR #13](https://github.com/Jurajjjjj1988/PWmodernizer/pull/13) (code) — a real Apache-2.0 test from [bonigarcia/selenium-webdriver-java](https://github.com/bonigarcia/selenium-webdriver-java) (PromptJupiterTest.java, browser-prompt dialog scenario) that flowed end-to-end Stage 1 → Stage 2 → confidence:high → real cross-language migration. The originally documented PR #3 / EmployeesTest example was a synthetic input from the build-out phase — the bonigarcia example shows the same pipeline on truly random GitHub code.
+> A real migration, narrated against the **v0.2.0 qa-master** architecture. PromptJupiterTest from
+> [bonigarcia/selenium-webdriver-java](https://github.com/bonigarcia/selenium-webdriver-java) is the
+> canonical example — Apache-2.0 Selenium-Java code that flowed plan → multi-file Stage 2 → verify
+> end-to-end and closed the v0.2.0 calibration loop in 11 prompt-iteration cycles.
 >
-> **Result you can inspect today (2026-06-06):**
-> - PR #6 Stage 1 plan: 9 anti-patterns detected, real KB-IDs cited, zero hallucinations
-> - PR #13 Stage 2 output: 96 LOC clean Playwright TS with `// plan:scenario=` pins, hallucination-defense WHY-comments, TODO references to plan questions
-> - Verify CANDOR (FluentWait analog): SDET=SHIP IT, Code Review=FIX FIRST → reviewer-required (not blocked)
+> **Result you can inspect today (2026-06-10):**
+> - Stage 1 plan + envelope on `main`: [`outputs/plans/PromptJupiterTest.java.md`](../outputs/plans/PromptJupiterTest.java.md) + sidecar JSON
+> - Stage 2 run `27265040399` — succeeded; emitted the qa-master layered output (spec + `base.fixture` extension + `PageClass` + `test-data` constants) on the `migrator/code-PromptJupiterTest` branch
+> - Verify run `27265926538` — returned **FIX FIRST** (max-severity tally across SDET + Code Review)
+> - The 11-iteration calibration loop that produced those run IDs is the closure event for v0.2.0; deltas live in `CHANGELOG.md` v0.1.1 + v0.2.0 entries
 
-## What we'll walk through
+## What this walkthrough covers
 
-We'll take one real input (`inputs/selenium-java/EmployeesTest.java` and its two siblings) through the full pipeline — Stage 1 plan, Stage 2 code generation, the optional Verify pass, and final merge — using PR #3 as the running example. By the end you'll know which workflow fires when, what each Claude call is actually reading, where the validation gates live, and what a reviewer is supposed to do at each PR. If you've skimmed the [`../README.md`](../README.md) architecture diagram and want to see it in motion, this is the document.
+Stage 1 plan generation, the qa-master multi-file Stage 2 output, the seven Stage 2 gates (incl. the new `validate-qa-master-conformance.ts`), CANDOR verify with max-severity tally, and what the reviewer sees at each PR. The big shift from v0.1.x is that Stage 2 **always** emits a layered tree — there is no minimal-spec mode anymore. See [`../examples/reference/qa-master/docs/ARCHITECTURE.md`](../examples/reference/qa-master/docs/ARCHITECTURE.md) for the structural spec the generator targets, and the per-layer `CLAUDE.md` files alongside it.
 
 ## The input
 
-The selenium-java multifile unit is three files in one directory:
-
 ```bash
-inputs/selenium-java/
-  EmployeesTest.java          # 40 LOC — JUnit 5 test class, 2 @Test methods
-  pages/EmployeesPage.java    # 66 LOC — PageFactory + @FindBy POM
-  helpers/DriverFactory.java  # 34 LOC — ThreadLocal<WebDriver> lifecycle
+inputs/selenium-java/PromptJupiterTest.java   # 81 LOC — JUnit 5, two @Test methods
 ```
 
-The plan workflow detects this is a directory-grouped unit (see `group_to_unit` in `plan.yml`) and treats all three files as one migration. A representative slice of the test file:
-
-```java
-@Test
-void searchFiltersTheEmployeeGrid() throws InterruptedException {
-    employees.search("Jane");
-    assertTrue(employees.rowCount() >= 1);
-    assertTrue(employees.firstRowName().toLowerCase().contains("jane"));
-}
-```
-
-…and the POM it delegates to:
-
-```java
-public void search(String query) throws InterruptedException {
-    searchInput.clear();
-    searchInput.sendKeys(query);
-    Thread.sleep(1500);                                     // hard-wait masking debounce
-}
-
-public int rowCount() {
-    return driver.findElements(By.cssSelector(".employees-grid .row")).size();
-}
-
-public String inviteToastText() {
-    return driver.findElement(
-        By.xpath("//div[contains(@class,'toast')]/span[2]") // positional XPath
-    ).getText();
-}
-```
-
-Three anti-patterns are already visible in fifteen lines: `Thread.sleep(1500)` masking a debounce, `findElements(...).size()` as a synchronous probe (a `sync-probe`), and a positional XPath `span[2]`. The full POM has more (PageFactory eager init, `WebDriverWait` boilerplate, `Actions.moveToElement` before a click). The plan stage will enumerate every one.
+`PromptJupiterTest` exercises a browser-native `window.prompt()` dialog on the bonigarcia dialog-boxes demo page. Two `@Test` methods (`testPrompt`, `testPrompt2`) test the same scenario via different Selenium API variants (two-step `switchTo().alert()` vs one-step `wait.until(alertIsPresent())`). Visible anti-patterns: `Thread.sleep(3s)` in `@AfterEach`, hardcoded absolute URL in `driver.get(...)`, `WebDriverWait` + `ExpectedConditions.alertIsPresent()` boilerplate, manual `WebDriverManager` setup/teardown.
 
 ## Stage 1 — trigger and what happens
 
-Two ways to fire Stage 1: push a new file under `inputs/**`, or manually:
-
 ```bash
-gh workflow run plan.yml -f input_path=inputs/selenium-java/EmployeesTest.java
+gh workflow run plan.yml -f input_path=inputs/selenium-java/PromptJupiterTest.java
 ```
 
-What the workflow does, in order — the step names match `.github/workflows/plan.yml`:
+`plan.yml` runs the v0.1.x preflight (Stage 0 sanity gate: size, encoding, test-marker grep, secret scan), assembles `prompts/_assembled/analyze.md` from fragments, calls Sonnet 4.6 with the qa-master reference plus the KB + rules + input, then writes:
 
-1. **`detect-changed-inputs`** — groups paths into single-file or directory units. For our case, all three siblings under `inputs/selenium-java/` collapse to one matrix entry.
-2. **Stage 0 pre-flight** — `find` walks the dir, totals bytes + estimated tokens, runs an encoding check and a min-content test-marker grep, then sweeps for hardcoded prod credentials (AWS / Stripe / Anthropic / OpenAI / Slack patterns). 200B floor, 25k-token cap (NVIDIA RULER context-degradation heuristic).
-3. **Skip-if-already-planned dedup** — labels carry the input hash; if a PR for this exact content already exists, the run no-ops.
-4. **`npm ci`** — installs validators (`ts-morph`, `ajv`, `tsx`).
-5. **Token shape check** — distinguishes `sk-ant-oat-*` (OAuth) from `sk-ant-api-*` (API key) and routes to the right env var. Both work.
-6. **Assemble prompts** — `scripts/assemble-prompts.ts` expands `{{include:_fragments/*.md}}` markers from [`../prompts/`](../prompts/) into [`../prompts/_assembled/`](../prompts/_assembled/). The latter is what Claude actually reads.
-7. **Run Claude (analyze)** — Sonnet 4.6 with `--max-turns 12 --permission-mode acceptEdits`. It reads the assembled prompt, [`../config/migration-rules.md`](../config/migration-rules.md), [`../config/knowledge-base.md`](../config/knowledge-base.md), the company-style anchor, and the input. Writes the plan markdown plus the envelope JSON sidecar.
-8. **Validate plan structure** — eight required H2 sections must be present (`## Source framework`, `## Summary`, `## Anti-patterns detected`, etc.) and at least one HIGH/MED/LOW token must appear.
-9. **Validate envelope JSON** — strict AJV schema check against `scripts/plan-envelope.schema.json`. If Claude didn't emit the sidecar, `scripts/derive-envelope.ts` reverse-engineers it from the markdown (safety net, logs a warning).
-10. **Severity histogram** — counts `| H |` / `| M |` / `| L |` rows for the PR title chip.
-11. **Persist plan metrics** — appends a row to `outputs/.metrics.db` for the dashboard.
-12. **Open plan PR** — `peter-evans/create-pull-request` opens `migrator/plan-<basename>` against `main`, labelled `migrator:plan` + the input-hash label.
+- `outputs/plans/PromptJupiterTest.java.md` — the markdown plan
+- `outputs/plans/PromptJupiterTest.java.envelope.json` — the machine-validatable sidecar
 
-Wallclock for this PR: about 10 minutes — Claude ate ~9, scaffolding ~1.
+The envelope is the **contract** for Stage 2. It pins scenario IDs (`1.1`, `1.2`), the locator table with confidence levels, hallucination-defense pins with reviewer fallbacks, and (new in v0.2.0) optional `requiredPages` / `requiredBlocks` / `requiredApi` / `requiredActions` / `requiredUtilities` / `requiredTestData` / `requiredTypes` arrays naming the helper-tree files Stage 2 must emit. The plan PR opens labeled `migrator:plan`.
 
-**What went wrong getting here.** Two real failures shipped a fix:
-
-- Stage 1 / Stage 2 PR-creation step failed with `HTTP 400 Duplicate header: Authorization` because `actions/checkout` and `peter-evans/create-pull-request` both stash `AUTHORIZATION` extraheaders. Fixed in commit `0b38aa5` by adding `persist-credentials: false` to checkout in `plan.yml` and `migrate.yml`. Full entry in [`troubleshooting.md`](troubleshooting.md).
-- `npm ci` failed with `ERESOLVE` on `tree-sitter-python@0.23.6` because the package declares `peerOptional` on `tree-sitter@^0.25` and the project pins `^0.21.1`. Fixed in commit `ca9afdb` by adding `.npmrc` with `legacy-peer-deps=true`.
-
-## What the plan produces
-
-The plan markdown lives at `outputs/plans/EmployeesTest.java.md` on the PR branch. The opening framework-detection block reads:
-
-> **selenium-java** — JUnit 5 + Selenium WebDriver 4.x (inferred from `org.openqa.selenium.*` imports, `@Test` / `@BeforeEach` / `@AfterEach` annotations, and `PageFactory` / `ExpectedConditions` usage). No explicit library version pinned in source files; PageFactory deprecation warning in Selenium 4 is consistent with the observed `@FindBy` + `initElements` pattern (KB-1.3.14).
->
-> **Target framework:** Playwright TypeScript (latest stable, 1.44+).
->
-> **Migration unit:** three-file directory treated as one unit per Selenium multifile migration rules…
-
-The anti-patterns table sorts H first. Top rows of the actual PR #3 table:
-
-| Sev | File | Line | KB-ID | Anti-pattern | Snippet | Replacement |
-|---|---|---|---|---|---|---|
-| H | EmployeesPage.java | 18 | KB-1.1.14 | hardcoded-url | `URL = "https://hr.beacon.test/employees"` | `page.goto('/employees')` with `baseURL` from env via config |
-| H | EmployeesPage.java | 40 | KB-1.3.1 | hard-wait | `Thread.sleep(1500)` | web-first assertion on grid row appearing |
-| H | DriverFactory.java | 11 | KB-1.3.16 | ThreadLocal-driver | `ThreadLocal<WebDriver> DRIVER` | Drop; Playwright `page` fixture is per-process, parallel-safe |
-
-The locator translation table marks each translation with HIGH / MED / LOW confidence:
-
-| Original | New | Confidence | Notes |
-|---|---|---|---|
-| `@FindBy(id = "search-employees")` | `page.locator('#search-employees')` | high | Direct ID→CSS per KB §6 Rule 1 |
-| `@FindBy(xpath = "//header//button[contains(., 'Add')]")` | `page.getByRole('button', { name: /add/i })` | med | Semantic `<button>` tag is direct evidence; exact accessible name unverified (Q3) |
-| `By.xpath("//div[contains(@class,'toast')]/span[2]")` | `page.getByRole('alert')` | low | Toast ARIA role unverified; positional `span[2]` loses meaning (Q6) |
-
-…and then the hallucination-defense pins section — one pin per low/med assumption, each with a source-locator fallback the reviewer can paste in if DOM contradicts the guess:
-
-> **Pin 5 — Confirmation toast.** Assumed `page.getByRole('alert')`. If toast container does not carry `role="alert"` or `role="status"`: keep `page.locator('xpath=//div[contains(@class,\'toast\')]').filter({ hasText: /invitation sent/i })`, add WHY-comment `'Q6 unresolved: toast ARIA role not confirmed'`. Reviewer fallback: ask FE team to add `role="alert"` to the toast component.
-
-The plan closes with ten numbered open questions for the reviewer (one per ambiguous decision), six risk callouts (search-debounce masking, toast auto-dismiss race, parallel-worker email collision…), and an estimated metrics block (selector quality 0.50, anti-pattern delta −24).
+The PromptJupiter plan flagged 9 anti-patterns across H/M/L severity, declared no POM extraction needed (single page, two near-duplicate tests, ~30 LOC effective body — well under the 200-LOC threshold), and ended with 3 open questions for the reviewer (consolidate the duplicate `@Test` methods? role-based vs CSS locator? post-dialog DOM assertion?).
 
 ## Reviewing the plan PR
 
-The PR body carries a five-item Stage-1 review checklist:
+The PR carries the v0.1.x five-item Stage-1 review checklist (framework detection, anti-pattern accuracy, locator confidence, structural calls, open questions). Two ways to push back:
 
-- [ ] Source framework detected correctly?
-- [ ] All anti-patterns listed match what you'd flag manually?
-- [ ] Locator confidence column — are LOW/MED rows actually risky?
-- [ ] Structural changes match file complexity?
-- [ ] Open questions answered (edit the plan if needed)?
+- **Edit the plan in-place** — Stage 2 reads the plan as-merged; surgical edits become the contract.
+- **Comment `/regenerate <feedback>`** — fires `regenerate-dispatch.yml`, closes the PR, re-runs Stage 1 with the feedback injected.
 
-Two ways to push back:
+## Stage 2 — qa-master multi-file output
 
-- **Edit the plan in-place** — change locators, sharpen open-question answers, drop bogus anti-patterns. Stage 2 reads the plan as-merged, so your edits become the contract. This is the right move for surgical changes ("the toast IS `role=status`, not `role=alert`").
-- **Comment `/regenerate <feedback>`** — fires `regenerate-dispatch.yml`, closes the current PR, and runs Stage 1 again with your feedback string injected into the prompt. Right move when the plan got the source framework wrong, missed a whole file, or hallucinated a fixture.
+Merging the plan PR fires `migrate.yml`. The shape mirrors v0.1.x but the prompt and validators are rewritten for qa-master:
 
-The envelope JSON sidecar (`outputs/plans/EmployeesTest.java.envelope.json`) is what locks Stage 2's hands. It pins the scenario IDs (`1.1`, `1.2`) that Stage 2 must emit as `// plan:scenario=1.1` comments above each `test(...)` call, the required POM file paths, and the locator table in machine-readable form. The migrate workflow's plan-vs-code coverage check (`scripts/plan-code-coverage.ts`) refuses to merge code that drops or renumbers a scenario.
+1. **Guard** — confirms the merged PR carries `migrator:plan` and parses the input path.
+2. **Validate envelope BEFORE reading plan** — fails fast if the sidecar is malformed.
+3. **Build snippet inventory** — `scripts/build-inventory.ts` walks `outputs/helper/` and presents the existing scaffolding (`basepage.ts`, `baseblock.ts`, the current `base.fixture.ts`) so Sonnet reuses instead of reinventing.
+4. **Run Claude (generate)** — Sonnet 4.6, `--max-turns 30`. Reads the plan + envelope + input + KB + rules + the `examples/reference/qa-master/` style anchor. Writes the **layered** output:
+   - `outputs/tests/<kebab>.spec.ts` — imports `test`/`expect` from `@fixtures/base.fixture`, NEVER from `@playwright/test`
+   - `outputs/helper/page-object/pages/<name>.page.ts` — `PageClass<Name>` extends `BasePage`, declares NO own constructor, `readonly` locator fields with `.describe('[LABEL] …')`
+   - `outputs/helper/fixtures/base.fixture.ts` — extended with the page-object fixture entries this migration needs (the scaffolding shell stays committed; Sonnet adds the `test.extend<{...}>({...})` entries)
+   - `outputs/helper/test-data/<name>.ts` — constants only (URLs, LABEL_* prefixes, magic strings extracted per Bullet 9 of `generate.md`)
+   - optional helper layers per plan: `blocks/`, `api/`, `actions/`, `utilities/`, `types/{external,internal}/`
+5. **Gates (the validator wall):**
+   - `tsc --noEmit -p outputs/tests/tsconfig.json` (path aliases resolve at the `outputs/` rootDir)
+   - `eslint --fix` with `eslint-plugin-playwright` + the no-restricted-imports rule that blocks `@playwright/test` outside `base.fixture.ts`
+   - `npx playwright test --list`
+   - `ast-diff-trivial-check` — rejects structural mirrors
+   - `plan-code-coverage` — every envelope scenario ID appears as exactly one `// plan:scenario=<id>` comment; every `required*` file exists
+   - **`validate-qa-master-conformance.ts` (new in v0.2.0)** — hard-fails on: spec importing from `@playwright/test`, `PageClass`/`BlockClass` with own constructor, locator field without `.describe('[LABEL] …')`, page-method `expect()` without `[LABEL]` arg, relative `../` cross-helper imports, `page.goto(` in a spec file. Soft-warns on missing type-prefix (`button*`/`input*`/`text*`/`array*`/`by*`) and utilities without unit tests.
+   - `validate-report-metrics.ts` — report's claimed filename + LOC must match emitted spec (the v0.1.1 falsified-100% gate)
+   - `evaluate.ts` — emits aggregate confidence 0..1 via the v2 5-signal formula
+6. **Fix-lint retry** (1× cap) — if any of `tsc`/`eslint`/`pw parse` fails, errors are fed back to Sonnet with a STOP-block PROMPT wrapper for a single retry.
+7. **Open code PR** labeled `migrator:code` + `confidence:high` or `confidence:low`.
 
-## Stage 2 — trigger by merging the plan PR
+For PromptJupiter, the Stage 2 run was `27265040399`. The emitted tree:
 
-Merging the `migrator:plan` PR fires `migrate.yml` (push-trigger on `outputs/plans/**`). The shape mirrors Stage 1:
+```
+outputs/tests/prompt-jupiter.spec.ts
+outputs/helper/page-object/pages/dialog-boxes.page.ts
+outputs/helper/fixtures/base.fixture.ts   (extended with dialogBoxesPage entry)
+outputs/helper/test-data/prompt.ts         (PROMPT_INPUT_TEXT + EXPECTED_PROMPT_MESSAGE constants)
+outputs/reports/PromptJupiterTest.java.md
+```
 
-1. **Guard** — confirms the merged PR carries the `migrator:plan` label and parses the input path from the PR body.
-2. **Validate envelope BEFORE reading plan** — first gate, fails fast if the sidecar is malformed.
-3. **Assemble prompts + build snippet inventory** — `scripts/build-inventory.ts` produces a per-locator candidate list Claude can ground against.
-4. **Run Claude (generate)** — Sonnet 4.6, `--max-turns ~14`. Reads the plan markdown, envelope JSON, input, KB, rules, and the style anchor. Writes `outputs/tests/<basename>/*.spec.ts` plus `pages/*.page.ts` if the plan said extract.
-5. **Validate (tsc + eslint + playwright parse)** — three validators on the generated TS. If lint errors are present, the workflow writes them to `outputs/.lint-errors.md` and triggers one fix-retry.
-6. **Fix-lint retry (1× cap)** — Claude re-runs with the lint errors as input, then re-validates. If still failing, the job fails the run; reviewer has to `/regenerate`.
-7. **AST-diff non-trivial check** — `scripts/ast-diff-trivial-check.ts` rejects "translations" that are too close to a structural mirror of the input.
-8. **Plan-vs-code coverage** — every scenario ID from the envelope must appear as exactly one `// plan:scenario=<id>` comment in the generated specs.
-9. **Output secret scan** — same patterns as Stage 0, run over the generated code (defence-in-depth).
-10. **DOM-ground locators (opt-in)** — if `MIGRATION_TARGET_URL` is set, `scripts/dom-ground.ts` verifies each locator resolves on the live DOM. See [`playwright-mcp-integration.md`](playwright-mcp-integration.md) for the contract.
-11. **Evaluate** — `scripts/evaluate.ts` emits an aggregate confidence in `[0, 1]`. Drives downstream routing.
-12. **Open code PR** — labelled `migrator:code` plus `confidence:high` or `confidence:low` depending on the evaluator output.
+The spec imports `test`/`expect` from `@fixtures/base.fixture`, never calls `page.goto()` (delegated to `dialogBoxesPage.open()`), registers the dialog handler with `page.once('dialog', …)` before the click per `generate.md` Bullet 15, captures the message in a closure, then asserts after the click (the v0.1.1 dialog-handler anti-pattern fix). Both `@Test` methods carried forward as two `test()` blocks with `// plan:scenario=1.1` / `// plan:scenario=1.2` pins.
 
-The code PR contains the TS code, the migration report (`outputs/reports/<basename>.md`), and a row in the metrics DB. Lint is guaranteed clean; envelope-pin coverage is guaranteed.
+## Verify — CANDOR with max-severity tally
 
-## Verify — automatic on confidence < 0.7
+When `evaluate.ts` returns < 0.7, `verify.yml` fires. Two parallel Opus calls: one with the SDET lens ([`../prompts/verify-sdet.md`](../prompts/verify-sdet.md)), one with Code Review ([`../prompts/verify-code-review.md`](../prompts/verify-code-review.md)). The v0.1.1 closure replaced the legacy SHIP-IT-counting tally with **max-severity consensus**:
 
-When `evaluate.ts` returns < 0.7, `migrate.yml`'s `trigger-verify` job fires `verify.yml`. This is the CANDOR pattern (`arxiv:2506.02943`): two parallel Opus calls, one with the SDET lens ([`../prompts/verify-sdet.md`](../prompts/verify-sdet.md)) and one with the Code Review lens ([`../prompts/verify-code-review.md`](../prompts/verify-code-review.md)). Each reads its own checklist and writes its own verdict.
+- both **SHIP IT** → SHIP IT
+- mixed SHIP IT + FIX FIRST → **FIX FIRST** (reviewer required)
+- both FIX FIRST → **FIX FIRST** (no lens wants regen — do not auto-regen)
+- any lens **START OVER** → START OVER (auto-`/regenerate` cap 3)
 
-Verdict ladder (`scripts/verify-tally.ts`):
-
-- **2/2 SHIP IT → SHIP IT.** Combined report posted on the code PR. The `confidence:low` label is replaced with `confidence:high` — the Opus pair overrides the Sonnet alarm.
-- **1/2 SHIP IT → FIX FIRST.** Reviewer reads the dissenting lens's concerns and either edits the code or `/regenerate`s.
-- **0/2 SHIP IT → START OVER.** Verify fires an auto-`/regenerate` via `repository_dispatch`, with a `regen-attempt:N` counter label (cap 3). If the counter hits `max-reached`, the workflow halts and requires manual intervention.
-
-Both sub-agents also run an output secret scan on their report, so a hallucinated key in a verify excerpt can't leak.
+For PromptJupiter, the verify run was `27265926538` against the unmerged `migrator/code-PromptJupiterTest` branch (using `verify.yml`'s `pr_branch` input, added in v0.1.1 PR #40). Verdict: **FIX FIRST** — both lenses concurred on FIX FIRST. No auto-regen, no false START OVER, reviewer is the next gate. Exactly the v0.1.1 closure pattern PR #42 was built to deliver.
 
 ## What happens on merge of the code PR
 
-Merging the `migrator:code` PR is the end state. The recommended branch-protection setup in [`../README.md`](../README.md) requires the `migrator:code` label, `confidence:high` (or a Verify SHIP IT override), and a human approval. Once merged:
+Recommended branch protection on `main` requires the `migrator:code` label + `confidence:high` (or a verify SHIP IT override) + a human approval. Once merged:
 
-- The migrated tests live at `outputs/tests/<basename>/`.
-- The migration report (anti-patterns fixed, locator quality score, AST-diff distance) lives at `outputs/reports/<basename>.md`.
-- The metrics row persists to `outputs/.metrics.db`. Visualise with:
+- `outputs/tests/<kebab>.spec.ts` and all helper-tree files land on `main`
+- `outputs/reports/<basename>.md` carries the metric breakdown (selector quality, smell delta, AST-diff distance, web-first rate, forbidden absence)
+- A row persists to `outputs/.metrics.db` for the dashboard (`npm run dashboard`)
 
-```bash
-npm run dashboard           # → http://localhost:8000
-```
+## The 11-iteration calibration loop (what closed v0.2.0)
 
-That's the loop. Push an input, review two PRs, merge.
+The PromptJupiter migration was not a one-shot. Between the v0.2.0 architecture rewrite landing on main and the final FIX FIRST verdict, 11 iterations of prompt + validator + workflow calibration pinned the qa-master output shape. The headline fixes:
+
+- PR #47 — remove v0.1.x prompt leakage that overrode the qa-master rules
+- PR #48 — baseline scaffolding on disk + max-turns 30 + type-only import exemption
+- PR #49 / #50 — `migrate.yml` artifact upload on lint failure + max-turns 12 → 20
+- PR #51 — validator + wrapper PROMPT: helper `expect` imports allowed; full spec/Page/fixture triad in the STOP block
+- PR #52 — ESLint `no-restricted-imports` + `page.goto` block + validator paren fix
+- PR #53 — promote tsconfig path aliases to `outputs/` so Playwright resolves them from `helper/`
+- PR #54 — `verify.yml` auto-dispatch passes `pr_branch` so verify reads the Stage 2 PR branch
+
+Each iteration produced one concrete failure mode → one fix → one calibrated validator. v0.1.x took the same shape (12 PRs across the verify-pipeline closure on 2026-06-09/10); v0.2.0's was 11. That's the operational pattern: ship a thin slice, run it against one real input, fix what Sonnet actually got wrong, re-run.
 
 ## Common failure modes for first-time users
 
-The single most useful follow-up read is [`troubleshooting.md`](troubleshooting.md), which catalogues nine known failure modes named by symptom (the user reads what they see, not what caused it). The two from this walkthrough — `HTTP 400 Duplicate header: Authorization` and `npm ERESOLVE` — are entries one and two.
+See [`troubleshooting.md`](troubleshooting.md). For v0.2.0 specifically, the most common first-run misses are:
 
-Four things to set up before your first migration:
+1. Spec imports `test` from `@playwright/test` instead of `@fixtures/base.fixture` — caught by `validate-qa-master-conformance.ts`. Fix: re-prompt or hand-edit.
+2. `PageClass` declares its own constructor — caught by the same validator. The base class wires `page`.
+3. Locator field missing `.describe('[LABEL] …')` — same validator, hard-fail.
+4. Path-alias resolution fails (`@page-object/...` 404) — confirm `outputs/tsconfig.json` paths from PR #53 are present.
 
-1. **`CLAUDE_CODE_OAUTH_TOKEN` repo secret.** Generated locally via `claude setup-token`. The plan workflow auto-routes `sk-ant-api-*` vs `sk-ant-oat-*` so either token shape works.
-2. **`MIGRATION_TARGET_URL` repo variable (optional).** Enables DOM-grounding in Stage 2. Without it, low-confidence locators stay as guesses.
-3. **Repository permissions.** Workflows need `contents: write`, `pull-requests: write`, `id-token: write` (already set in the YAML, but blocked by org policies in some setups).
-4. **Branch protection on `main`.** Recommended config in the operational README — require `migrator:code` label + `confidence:high` + 1 human review before merge.
+Four things to set up before the first migration:
 
-**Cost expectations.** Per migration, end-to-end: roughly `$0.30–$1.00` depending on input size. Stage 1 is the largest single chunk (Sonnet, ~10–20K context tokens including KB + rules); Stage 2 is comparable; Verify (when it fires) doubles the cost because it's two Opus calls. For PR #3's three-file unit (140 LOC), Stage 1 alone was around `$0.40`.
+1. **`CLAUDE_CODE_OAUTH_TOKEN` repo secret** (or `ANTHROPIC_API_KEY` — see README quickstart).
+2. **`MIGRATION_TARGET_URL` repo variable (optional)** — enables DOM grounding.
+3. **Repository permissions** — `contents: write`, `pull-requests: write`, `id-token: write`.
+4. **Branch protection on `main`** — `migrator:code` label + `confidence:high` + human review.
+
+**Cost expectations.** Per migration, end-to-end: roughly `$0.20–$0.70`. Stage 1 Sonnet ~`$0.10`; Stage 2 Sonnet (multi-file qa-master output is ~2× the v0.1.x single-spec cost) ~`$0.20`; verify Opus CANDOR (only when confidence < 0.7) ~`$0.40` for both lenses combined.
 
 ## Where to next
 
-- [`../ROADMAP.md`](../ROADMAP.md) — living state for shipped vs in-progress features.
-- [`beyond-v1-research.md`](beyond-v1-research.md) — four post-v1.0 directions (LangGraph, Claude SDK rewrite, auto-PR-merge, GitHub App).
-- [`playwright-mcp-integration.md`](playwright-mcp-integration.md) — design brief for DOM grounding (the opt-in Stage 2 gate referenced above).
-- [`baselines.md`](baselines.md) — measured wall-clock timings for smoke + calibrate + each validator. Use to spot regressions.
-- [`../prompts/`](../prompts/) — the source prompts. If your input class consistently surfaces a quirk Claude misses, the right fix is usually a prompt edit, not a script change.
-- [`../config/knowledge-base.md`](../config/knowledge-base.md) and [`../config/migration-rules.md`](../config/migration-rules.md) — the cached context every Claude call reads. Add a new anti-pattern here and Stage 1 starts flagging it on the next run.
+- [`../ROADMAP.md`](../ROADMAP.md) — shipped vs in-progress.
+- [`../examples/reference/qa-master/docs/ARCHITECTURE.md`](../examples/reference/qa-master/docs/ARCHITECTURE.md) — the structural target Stage 2 generates against.
+- [`../examples/reference/qa-master/docs/CLAUDE.md`](../examples/reference/qa-master/docs/CLAUDE.md) — the 100-line orientation alongside it.
+- [`../config/migration-rules.md`](../config/migration-rules.md) — §1–§4 are the qa-master contract in prose.
+- [`../config/knowledge-base.md`](../config/knowledge-base.md) — the `qa-master/` namespace (15 IDs) is the anti-pattern catalogue the conformance validator references.
+- [`../prompts/`](../prompts/) — `analyze.md` Step 5a–5j and `generate.md` Your-task section are the v0.2.0 prompt anchors.

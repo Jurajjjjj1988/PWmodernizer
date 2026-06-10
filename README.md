@@ -6,9 +6,36 @@
 
 > An LLM-driven 3-stage pipeline that turns bad Playwright / Cypress / Selenium tests into clean modern Playwright TypeScript. Step 1 (bad-Playwright) is the active quality bar; Step 2 (Cypress) and Step 3 (Selenium) ride the same rails with deferred promotion.
 
-**Honest scope:** PWmodernizer is _assistive scaffolding_, not a deterministic test framework migrator. Each migration produces a markdown plan + JSON envelope + generated code + a metrics report + a verify verdict. **Human review is required** before merge. Quality target: 70% acceptable rate on the bad-Playwright corpus before promoting Cypress/Selenium beyond example status.
+**Honest scope:** PWmodernizer is _assistive scaffolding_, not a deterministic test framework migrator. As of **v0.2.0** every migration produces a markdown plan + JSON envelope + a **multi-file qa-master layered output** (spec + `PageClass` + `base.fixture` extension + optional blocks/api/actions/utilities/test-data/types) + a metrics report + a verify verdict. **Human review is required** before merge. Quality target: 70% acceptable rate on the bad-Playwright corpus before promoting Cypress/Selenium beyond example status.
 
-## Current state (2026-06-06)
+## What you get (v0.2.0 qa-master)
+
+The Stage 2 default output is the **qa-master layered architecture** — a real-company production-grade tree, not a single bare `.spec.ts`:
+
+```
+outputs/
+├── tests/
+│   └── <kebab>.spec.ts                          # imports test/expect from @fixtures/base.fixture
+└── helper/
+    ├── page-object/
+    │   ├── basepage.ts        (committed)        # abstract BasePage — wires `page`
+    │   ├── baseblock.ts       (committed)        # abstract BaseBlock — for reusable sections
+    │   ├── pages/<name>.page.ts                  # PageClass<Name>, readonly locators w/ .describe()
+    │   └── blocks/<name>.block.ts                # BlockClass<Name> (when section ≥5 locators / 3 methods)
+    ├── fixtures/
+    │   └── base.fixture.ts    (committed shell)  # ONLY file allowed to import @playwright/test
+    ├── api/<name>.api.ts                         # request wrappers for data prep
+    ├── actions/<name>.ts                         # cross-page flows
+    ├── utilities/<verb>-<noun>.ts                # PURE functions (parse*/get*/calculate*/verify*)
+    ├── test-data/<name>.ts                       # URLs, LABEL_* prefixes, magic strings
+    └── types/{external,internal}/<name>.ts       # data shapes
+```
+
+The single-spec minimal mode from v0.1.x is gone. Every migration emits the layered tree because that's what a senior SDET would write. The architecture is anchored on the verbatim `examples/reference/qa-master/` snapshot (real-company Playwright tests, owner-permitted) — see `examples/reference/qa-master/docs/ARCHITECTURE.md` for the structural spec. Hard-enforced by `scripts/validate-qa-master-conformance.ts` (wired into `migrate.yml`).
+
+The v0.2.0 calibration loop closed at **11 iterations** of prompt + validator + workflow fixes on the canonical PromptJupiterTest migration: Stage 2 run `27265040399` succeeded, verify run `27265926538` returned **FIX FIRST** (max-severity tally across SDET + Code Review). End-to-end narrative: [`docs/walkthrough.md`](docs/walkthrough.md).
+
+## Current state (2026-06-10)
 
 The pipeline is end-to-end PROVEN on random public GitHub tests. Status snapshot:
 
@@ -46,14 +73,16 @@ inputs/<framework>/foo.spec.ts
    ┌────────────────────┐
    │  Stage 1 — Plan    │  Claude Sonnet 4.6 (cheap, good)
    │  (plan.yml)        │  Reads:
-   └────────────────────┘    - config/knowledge-base.md (cached)
-            │                - config/migration-rules.md (cached)
-            │                - examples/reference/company-style.spec.ts (style anchor)
+   └────────────────────┘    - config/knowledge-base.md (cached, incl. qa-master/ namespace)
+            │                - config/migration-rules.md §1–§4 (qa-master contract, cached)
+            │                - examples/reference/qa-master/ (production style anchor)
             │                - prompts/_assembled/analyze.md (fragment-expanded)
             │                - the input file
             ▼                Writes:
-   outputs/plans/foo.spec.ts.md       - the plan markdown
-   outputs/plans/foo.spec.ts.envelope.json  - LPW machine-validatable contract
+   outputs/plans/foo.spec.ts.md       - the plan markdown (incl. §5 file-emission table)
+   outputs/plans/foo.spec.ts.envelope.json  - LPW machine-validatable contract w/ requiredPages,
+                                              requiredBlocks, requiredApi, requiredActions,
+                                              requiredUtilities, requiredTestData, requiredTypes
             │
             │  open PR labeled `migrator:plan`
             │  HUMAN REVIEWS PLAN → edits if needed → merges
@@ -63,15 +92,19 @@ inputs/<framework>/foo.spec.ts
    │  (migrate.yml)      │  Reads:
    └────────────────────┘    - the approved plan + envelope (fail-fast validation)
             │                - input file, knowledge-base, rules
-            │                - examples/reference/company-style.spec.ts
-            │                - snippets inventory (existing POMs/fixtures/helpers)
-            ▼                Writes:
-   Validation gates:           - outputs/tests/foo.spec.ts (with // plan:scenario=<id> pins)
-   - tsc --noEmit              - outputs/tests/pages/*.page.ts (if plan said extract)
-   - eslint-plugin-playwright  - outputs/tests/fixtures/*.fixture.ts (if plan said extract)
-   - playwright test --list    - outputs/reports/foo.spec.ts.md (metrics)
-   - ast-diff-not-trivial      - outputs/reports/foo.spec.ts-dom-probe.json (opt-in DOM probe)
-   - plan-vs-code coverage (LPW)
+            │                - examples/reference/qa-master/ (layered architecture anchor)
+            │                - snippets inventory (existing POMs/fixtures/helpers in outputs/helper/)
+            ▼                Writes (qa-master layered tree, always multi-file):
+   Validation gates:           - outputs/tests/<kebab>.spec.ts (imports from @fixtures/base.fixture)
+   - tsc --noEmit              - outputs/helper/page-object/pages/<name>.page.ts
+   - eslint-plugin-playwright  - outputs/helper/page-object/blocks/<name>.block.ts (when warranted)
+     + no-restricted-imports   - outputs/helper/fixtures/base.fixture.ts (extended; never replaced)
+   - playwright test --list    - outputs/helper/api/<name>.api.ts (when data prep needed)
+   - ast-diff-not-trivial      - outputs/helper/actions/<name>.ts (cross-page flows)
+   - plan-vs-code coverage     - outputs/helper/utilities/<verb>-<noun>.ts (pure, unit-tested)
+   - qa-master conformance     - outputs/helper/test-data/<name>.ts (constants + LABEL_* prefixes)
+     (NEW in v0.2.0)           - outputs/helper/types/{external,internal}/<name>.ts (data shapes)
+   - report-metric self-check  - outputs/reports/<basename>.md (metrics)
    - dom-ground probe (opt-in, MIGRATION_TARGET_URL)
    - evaluate.ts (emits aggregate confidence 0..1 via 5-signal v2 formula)
             │
@@ -154,9 +187,12 @@ inputs/<framework>/foo.spec.ts
 4. **Review the plan.** Read every row in the locator translation table. Pay attention to MED and LOW confidence entries — these are the LLM's best guesses and may be wrong.
 5. Edit the plan in the PR if needed. The envelope is a contract — Stage 2 validates it BEFORE reading the plan body and follows it literally.
 6. Merge the plan PR.
-7. **Stage 2 (`migrate.yml`) fires automatically** on the merge. It produces:
-   - `outputs/tests/your-test.spec.ts` — the migrated Playwright code with `// plan:scenario=<id>` pins on every test block
-   - `outputs/tests/pages/*.page.ts` and `outputs/tests/fixtures/*.fixture.ts` — only if the plan said extract them
+7. **Stage 2 (`migrate.yml`) fires automatically** on the merge. It produces the **qa-master layered output** (multi-file by default):
+   - `outputs/tests/your-test.spec.ts` — the migrated Playwright spec (imports `test`/`expect` from `@fixtures/base.fixture`, `// plan:scenario=<id>` pin on every test block)
+   - `outputs/helper/page-object/pages/<name>.page.ts` — the `PageClass`, `readonly` locator fields with `.describe('[LABEL] …')`, no own constructor
+   - `outputs/helper/fixtures/base.fixture.ts` — extended with the page-object fixture entry for this migration (the scaffolding shell stays committed)
+   - `outputs/helper/test-data/<name>.ts` — constants (URLs, LABEL_* prefixes, extracted magic strings)
+   - optional helper layers per plan: `blocks/`, `api/`, `actions/`, `utilities/`, `types/{external,internal}/`
    - `outputs/reports/your-test.spec.ts.md` — metrics report with per-signal confidence breakdown
    - `outputs/reports/your-test.spec.ts-dom-probe.json` — DOM grounding evidence (if `MIGRATION_TARGET_URL` is set)
    - A second PR labeled `migrator:code` with the generated files
@@ -208,14 +244,33 @@ PWmodernizer/
 │   └── _stress/                  # 15 adversarial fixtures for Stage 0 calibration
 ├── outputs/
 │   ├── plans/                    # Stage 1 deliverables (per-input .md + .envelope.json)
-│   ├── tests/                    # Stage 2 deliverables (the migrated code, pages/, fixtures/)
-│   │   └── tsconfig.json         # Strict mode + Playwright types
+│   ├── tests/                    # Stage 2 specs only — <kebab>.spec.ts, imports from @fixtures/base.fixture
+│   │   ├── tsconfig.json         # Strict mode + Playwright types + path aliases
+│   │   └── playwright.config.ts
+│   ├── helper/                   # v0.2.0 qa-master layered tree
+│   │   ├── page-object/
+│   │   │   ├── basepage.ts       # committed scaffolding (abstract BasePage)
+│   │   │   ├── baseblock.ts      # committed scaffolding (abstract BaseBlock)
+│   │   │   ├── pages/            # PageClass<Name> emitted per migration
+│   │   │   └── blocks/           # BlockClass<Name> when warranted
+│   │   ├── fixtures/
+│   │   │   └── base.fixture.ts   # committed shell — Stage 2 EXTENDS, never replaces
+│   │   ├── api/                  # request wrappers for data prep
+│   │   ├── actions/              # cross-page flows
+│   │   ├── utilities/            # pure functions (parse*/get*/calculate*/verify*) + logger.ts
+│   │   ├── test-data/            # constants only (URLs, LABEL_* prefixes, magic strings)
+│   │   └── types/{external,internal}/
 │   ├── reports/                  # Per-migration metrics (one .md per input + optional -verify-{sdet,code-review}.md + -dom-probe.json)
 │   ├── .metrics.db               # SQLite cross-run persistence (3 tables: migrations, plans, verifications)
 │   └── .stage1-cache/            # SHA-256 keyed local replay cache (gitignored)
 ├── examples/
 │   ├── reference/
-│   │   └── company-style.spec.ts # The gold-standard target Claude anchors on
+│   │   ├── company-style.spec.ts # v0.1.x style anchor (kept for historical corpus)
+│   │   └── qa-master/            # v0.2.0 style anchor — real-company production tree
+│   │       ├── README.md         # how PWmodernizer uses this anchor
+│   │       ├── docs/{ARCHITECTURE,CLAUDE}.md   # structural spec + 100-line orientation
+│   │       ├── helper/{page-object,fixtures,api,utilities,test-data}/
+│   │       └── tests/account.sign-in.spec.ts   # canonical spec shape
 │   ├── bad-playwright-01-flaky-waits/   # input + expected-output + expected-plan + expected-plan.envelope.json
 │   ├── bad-playwright-02-nth-selectors/
 │   ├── bad-playwright-03-silent-conditionals/
@@ -284,11 +339,13 @@ PWmodernizer/
 - Open-questions Q-IDs must bind to entries (Cleanlab pattern)
 
 **Stage 2 generation gates** — code PR opens only if all pass:
-- `tsc --noEmit` passes (strict mode, no `any`)
-- `eslint --fix` with 22 `eslint-plugin-playwright` rules + 11 research-backed additions (`prefer-native-locators`, `no-element-handle`, `no-networkidle`, `no-unsafe-references`, `max-nested-describe: 2`, etc.)
+- `tsc --noEmit` passes (strict mode, no `any`) — path aliases resolve from `outputs/` rootDir per v0.2.0 PR #53
+- `eslint --fix` with 22 `eslint-plugin-playwright` rules + 11 research-backed additions (`prefer-native-locators`, `no-element-handle`, `no-networkidle`, `no-unsafe-references`, `max-nested-describe: 2`, etc.) + `no-restricted-imports` blocking `@playwright/test` outside `base.fixture.ts` (v0.2.0)
 - `npx playwright test --list` enumerates the generated spec (parses as a real Playwright test)
 - **AST-diff-not-trivial** check: ts-morph + Zhang-Shasha tree-edit-distance with identifier normalization (`$id`, `$str`). Reject if normalized distance < 5% of max tree size. For `.java` / `.py` inputs uses real tree-sitter (commit `666332a`), not LCS fallback. Calibration 10/10.
-- **plan-vs-code coverage** (LPW): every `scenarios[].id` from the envelope must appear as exactly one `// plan:scenario=<id>` pin in the code; `requiredPOMs[]` and `requiredFixtures[]` files must exist; subtractive plans only import `@playwright/test` + relative paths
+- **plan-vs-code coverage** (LPW): every `scenarios[].id` from the envelope must appear as exactly one `// plan:scenario=<id>` pin in the code; all `required*` files (Pages, Blocks, Api, Actions, Utilities, TestData, Types) from the envelope must exist.
+- **qa-master conformance** (new in v0.2.0, `scripts/validate-qa-master-conformance.ts`): hard-fails on (a) spec importing `test`/`expect` from `@playwright/test`, (b) `PageClass`/`BlockClass` declaring own constructor, (c) locator field without `.describe('[LABEL] …')`, (d) `expect()` inside page method without `[LABEL]` message arg, (e) relative `../` cross-helper import instead of path alias, (f) `page.goto(` in a spec file. Soft-warns on missing locator type-prefix and utilities without unit tests.
+- **report-metric self-consistency** (v0.1.1): the report's claimed `Output:` filename + LOC must match the emitted spec — catches the structural copy-paste falsified-100% case.
 - **dom-ground probe** (opt-in via `MIGRATION_TARGET_URL`): every locator call resolves uniquely against the live DOM; persists `outputs/reports/*-dom-probe.json` for verify
 - **Output secret scan**: mirrors Stage 0 pre-flight against generated output — blocks if Claude hallucinated a real prod credential
 - **Lint-and-test feedback loop** (Aider pattern): if any of `tsc`/`eslint`/`playwright parse` fails, retry once with errors fed back to Claude; hard-fail after 1 retry
