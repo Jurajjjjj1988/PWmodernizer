@@ -1,4 +1,5 @@
 import { test as base, expect } from "@playwright/test";
+import { PageClassPromptJupiter } from "@page-object/pages/prompt-jupiter.page";
 
 /**
  * Single import source for `test` + `expect` in every spec.
@@ -11,8 +12,10 @@ import { test as base, expect } from "@playwright/test";
  * imports `test` + `expect` from here. `validate-qa-master-conformance.ts` enforces this.
  */
 
-type Fixtures = Record<string, never>;
+type Fixtures = { promptJupiterPage: PageClassPromptJupiter };
 
-const test = base.extend<Fixtures>({});
+const test = base.extend<Fixtures>({
+  promptJupiterPage: async ({ page }, use) => use(new PageClassPromptJupiter(page)),
+});
 
 export { test, expect };
