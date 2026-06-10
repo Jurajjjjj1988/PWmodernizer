@@ -159,9 +159,13 @@ function countSmells(rawSource: string): SmellCount {
   c.consoleLog += (source.match(/console\.log\s*\(/g) ?? []).length;
 
   // Non-web-first assertions — anti-pattern in Playwright.
-  c.nonWebFirstAsserts +=
-    (source.match(/expect\s*\(\s*await\s+[a-zA-Z_$.][^)]*\.(isVisible|isHidden|isEnabled|isDisabled|isChecked|count|textContent)\s*\(\s*\)\s*\)\s*\.\s*(toBe|toEqual)/g) ??
-      []).length;
+  // Total expects minus awaited expects = sync probes. Calibrated 2026-06-10
+  // with `webFirstAssertionRate` against PR #13 (was undercounting Bullet 15
+  // `expect(capturedMessage).toBe()` calls because the legacy regex only
+  // matched `.isVisible()`-style direct probes).
+  const totalExpects = (source.match(/\bexpect\s*\(/g) ?? []).length;
+  const awaitedExpects = (source.match(/await\s+expect\s*\(/g) ?? []).length;
+  c.nonWebFirstAsserts += Math.max(0, totalExpects - awaitedExpects);
 
   // Conditional logic inside test bodies (true smell, but very hard to
   // count without AST — conservative: search for `if (` after `test(`.
@@ -203,13 +207,24 @@ function selectorQualityScore(mix: SelectorMix): number {
 }
 
 // ---- Web-first assertion rate.
+//
+// Definition (per migration-rules.md §5): web-first means `await expect(loc).<matcher>()`
+// where loc is a Playwright Locator and the matcher is retrying. Sync probes
+// like `expect(stringVar).toBe(...)`, `expect(await x.isVisible()).toBe(...)`,
+// `expect(dialog.message()).toBe(...)` are NOT web-first — they assert on a
+// snapshot value, no retry.
+//
+// Counting: every `expect(...)` call in the spec is one assertion. The web-first
+// numerator is the subset preceded by `await`. The legacy sync regex only
+// matched `expect(X.text()).toBe()` shapes — it missed plain `expect(var).toBe()`
+// (PR #13 verify Code Review block-severity finding: report claimed 100% but
+// actual was 50% because Bullet 15's `expect(capturedMessage).toBe()` calls
+// weren't detected). Calibrated 2026-06-10.
 function webFirstAssertionRate(source: string): number {
+  const totalExpects = (source.match(/\bexpect\s*\(/g) ?? []).length;
+  if (totalExpects === 0) return 1;
   const webFirst = (source.match(/await\s+expect\s*\(/g) ?? []).length;
-  const sync = (source.match(/expect\s*\(\s*[a-zA-Z_$.]+\.(text|value|count)\s*\(\s*\)\s*\)/g) ?? [])
-    .length;
-  const total = webFirst + sync;
-  if (total === 0) return 1;
-  return webFirst / total;
+  return webFirst / totalExpects;
 }
 
 // ---- Forbidden patterns hard list. Strip comments first to avoid flagging
