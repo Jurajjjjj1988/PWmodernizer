@@ -3541,6 +3541,31 @@ reference, even within the same folder.
 `validate-qa-master-conformance.ts` emits: `Sibling relative import (./…) —
 KB qa-master/architecture/relative-imports-sibling`.
 
+### qa-master/runtime/no-hard-waits
+
+**Smell**: `page.waitForSelector(...)`, `page.waitForTimeout(...)` or `page.waitForLoadState(...)` anywhere in `outputs/`.
+**Fix**: hard-waits are THE #1 flake source per root CLAUDE.md. Use web-first assertions (`await expect(locator).toBeVisible()`, `.toHaveText(...)`) that auto-retry until the condition holds. `validate-qa-master-conformance.ts` emits: `Hard-wait 'page.waitForXxx(' — KB qa-master/runtime/no-hard-waits. Use web-first assertions (expect(locator).toBeVisible(), etc.) — hard-waits are THE #1 flake source.`
+
+### qa-master/observability/no-console
+
+**Smell**: `console.log/warn/error/info/debug(...)` in `outputs/tests/**` or `outputs/helper/**` (other than the sanctioned `helper/utilities/logger.ts` wrapper).
+**Fix**: diagnostics route through `import logger from "@logger"` — single source of structured output, easy to silence or redirect. Only `outputs/helper/utilities/logger.ts` is allowed to call `console.*` directly (it IS the wrapper). `validate-qa-master-conformance.ts` emits: `console.<level>() in test/helper code — KB qa-master/observability/no-console. Route diagnostics through \`import logger from "@logger"\` — only outputs/helper/utilities/logger.ts may call console.*.`
+
+### qa-master/layer/utilities-pure
+
+**Smell**: a file under `outputs/helper/utilities/**` imports `@playwright/test`, imports `fs` / `axios`, or calls `fetch(...)`.
+**Fix**: utilities are pure parsers / formatters / validators — no browser, no HTTP, no fs. Move browser interaction to a page object; move HTTP to `helper/api/`. `logger.ts` is exempt because its 4-method interface (info/warn/error/debug) is stable and it IS the sanctioned console wrapper.
+
+### qa-master/layer/test-data-constants-only
+
+**Smell**: a file under `outputs/helper/test-data/**` declares `export function`, `export async function`, or `export class`.
+**Fix**: `test-data/` ships `export const` payloads only — fixtures, sample records, enum-like option lists. Logic that derives data belongs in a pure utility (`helper/utilities/`) or an api helper (`helper/api/`).
+
+### qa-master/layer/api-not-in-page
+
+**Smell**: a page object under `outputs/helper/page-object/**` calls `fetch(...)` or `page.request.<verb>(...)`.
+**Fix**: API wrappers belong in `outputs/helper/api/` — never in a page object. Page objects are UI-only; mixing HTTP into them breaks the layer boundary and makes the test untestable in isolation.
+
 ## Authoritative references
 
 - Playwright docs — [playwright.dev/docs](https://playwright.dev/docs/intro)
