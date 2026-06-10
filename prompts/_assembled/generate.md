@@ -410,7 +410,15 @@ Raw text assertions without a web-first wrapper, or asserting on a value already
 
     **(b) Specs MUST NOT call `page.goto()` directly.** Navigation lives on the Page (`async open() { await this.page.goto(this.url); await this.waitForPageLoad(); }`). Specs never call `page.goto`. The validator hard-fails on it. Why: centralised URL ownership (URLs live in `@test-data/urls`), centralised post-load wait discipline (every Page declares a `waitForPageLoad`), and routing changes don't ripple across every spec.
 
-    **(c) If the plan's required helper files are absent in the inventory, you MUST create them.** Sonnet on the same retest created `outputs/helper/fixtures/base.fixture.ts` but failed to create `outputs/helper/page-object/pages/<name>.page.ts`, then fell back to inline `page.goto()` because the page object it needed didn't exist. The plan's `requiredPages` / `requiredFixtures` / `requiredApi` / etc. are a contract — every listed file MUST be written before the spec that depends on it. Build the helpers first; write the spec last.
+    **(c) Always emit the v0.2.0 baseline scaffolding — even when the envelope is silent.** Sonnet on the same retest created `outputs/helper/fixtures/base.fixture.ts` but failed to create `outputs/helper/page-object/pages/<name>.page.ts`, then fell back to inline `page.goto()` because the page object it needed didn't exist.
+
+    The qa-master conformance validator treats the **minimum scaffolding** as non-negotiable for **every** migration, regardless of envelope content:
+
+    1. `outputs/helper/fixtures/base.fixture.ts` — re-exports `test` + `expect` from `@playwright/test`. If the spec uses any page-object fixture, inject it via `test = base.extend<{...}>({...})`. Even a 1-test migration needs this file.
+    2. `outputs/helper/page-object/basepage.ts` — abstract `BasePage` with `readonly page: Page` parameter property + abstract `waitForPageLoad()`.
+    3. **At least one** `outputs/helper/page-object/pages/<name>.page.ts` — every URL the spec visits MUST have a Page. The Page declares `readonly url`, `async open()`, `async waitForPageLoad()`, the locators (`.describe('[LABEL] …')`), and the assertion methods (`expect(..., '[LABEL] WHY').toBe(...)`).
+
+    Empty `requiredPOMs` / `requiredPages` in a legacy v0.1.x-shaped envelope does NOT relieve you of (1)/(2)/(3). The envelope's `required*` arrays list **extra** helpers beyond the baseline — never **fewer**. Derive the minimum Page set from the spec's `userAction` strings: every distinct URL the user lands on = one Page. Build the helpers first; write the spec last.
 
 ## Tone and style of the generated code
 
