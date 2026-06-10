@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "useDefineForClassFields": true,
+    "baseUrl": ".",
+    "paths": {
+      "@fixtures/*": ["helper/fixtures/*"],
+      "@actions/*": ["helper/actions/*"],
+      "@api/*": ["helper/api/*"],
+      "@browser/*": ["helper/browser/*"],
+      "@page-object/*": ["helper/page-object/*"],
+      "@test-data/*": ["helper/test-data/*"],
+      "@types/*": ["helper/types/*"],
+      "@utilities/*": ["helper/utilities/*"],
+      "@logger": ["helper/utilities/logger.ts"]
+    },
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["helper/**/*.ts", "tests/**/*.ts", "*.ts"]
+}

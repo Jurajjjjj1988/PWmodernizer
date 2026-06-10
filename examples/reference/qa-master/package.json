@@ -1,0 +1,36 @@
+{
+  "name": "qa-master",
+  "version": "1.0.0",
+  "description": "Automated functional tests (UI + API) for all www-platform services. Runs against www-master staging and production.",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:desktop": "playwright test --project=desktop",
+    "test:mobile": "playwright test --project=mobile",
+    "test:api": "playwright test --project=api",
+    "staging": "playwright test --grep @staging",
+    "prod": "IS_PRODUCTION=true playwright test --grep @prod",
+    "report": "playwright show-report",
+    "ui": "playwright test --ui",
+    "debug": "playwright test --debug",
+    "codegen": "playwright codegen",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@faker-js/faker": "^9.9.0",
+    "@playwright/test": "1.57.0",
+    "@types/node": "^24.10.1",
+    "eslint": "^9.39.2",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-playwright": "^2.3.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0"
+  }
+}
