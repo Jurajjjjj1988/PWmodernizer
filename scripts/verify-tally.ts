@@ -42,12 +42,20 @@ export function parseVerdict(reportPath: string): Verdict {
 }
 
 export function tally(sdet: Verdict, cr: Verdict): Verdict {
-  let shipCount = 0;
-  if (sdet === "SHIP IT") shipCount++;
-  if (cr === "SHIP IT") shipCount++;
-  if (shipCount === 2) return "SHIP IT";
-  if (shipCount === 1) return "FIX FIRST";
-  return "START OVER";
+  // Max-severity consensus (calibrated 2026-06-10 against PR #13 verify run
+  // 27240945253). Legacy "SHIP_COUNT == 0 → START OVER" over-rejected when
+  // both lenses agreed on warn-severity findings (FIX FIRST + FIX FIRST):
+  // no lens wanted regeneration, but auto-regen fired anyway.
+  //
+  //   SHIP IT + SHIP IT       → SHIP IT
+  //   SHIP IT + FIX FIRST     → FIX FIRST
+  //   SHIP IT + START OVER    → START OVER (one strong reject)
+  //   FIX FIRST + FIX FIRST   → FIX FIRST (no lens wants regen)
+  //   FIX FIRST + START OVER  → START OVER
+  //   START OVER + START OVER → START OVER
+  if (sdet === "START OVER" || cr === "START OVER") return "START OVER";
+  if (sdet === "FIX FIRST" || cr === "FIX FIRST") return "FIX FIRST";
+  return "SHIP IT";
 }
 
 function main(): void {

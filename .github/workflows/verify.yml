@@ -409,11 +409,32 @@ jobs:
           [ "$SDET_VERDICT" = "SHIP IT" ] && SHIP_COUNT=$((SHIP_COUNT + 1))
           [ "$CR_VERDICT"   = "SHIP IT" ] && SHIP_COUNT=$((SHIP_COUNT + 1))
 
-          case "$SHIP_COUNT" in
-            2) FINAL_VERDICT="SHIP IT" ;;
-            1) FINAL_VERDICT="FIX FIRST" ;;
-            0) FINAL_VERDICT="START OVER" ;;
-          esac
+          # Calibration update (2026-06-10, PR #13 closure):
+          # The original ladder treated 0/2 SHIP IT as START OVER regardless
+          # of whether the lenses said FIX FIRST or START OVER. That over-
+          # rejected: when both lenses agree "human adjudication needed, no
+          # regeneration" (FIX FIRST + FIX FIRST), they were treated as
+          # "regenerate" (START OVER). PR #13 verify run 27240945253 hit
+          # this exactly — both lenses gave FIX FIRST on report-metric
+          # accuracy (no block-severity findings on the spec itself),
+          # auto-regen fired anyway.
+          #
+          # New rule: take the MAX SEVERITY across lenses.
+          #   SHIP IT + SHIP IT       → SHIP IT
+          #   SHIP IT + FIX FIRST     → FIX FIRST
+          #   SHIP IT + START OVER    → START OVER (one strong reject)
+          #   FIX FIRST + FIX FIRST   → FIX FIRST (no lens wants regen)
+          #   FIX FIRST + START OVER  → START OVER
+          #   START OVER + START OVER → START OVER
+          #
+          # SHIP_COUNT preserved for backwards-compat in the report header.
+          if [ "$SDET_VERDICT" = "START OVER" ] || [ "$CR_VERDICT" = "START OVER" ]; then
+            FINAL_VERDICT="START OVER"
+          elif [ "$SDET_VERDICT" = "FIX FIRST" ] || [ "$CR_VERDICT" = "FIX FIRST" ]; then
+            FINAL_VERDICT="FIX FIRST"
+          else
+            FINAL_VERDICT="SHIP IT"
+          fi
 
           echo "SDET verdict:        $SDET_VERDICT"
           echo "Code Review verdict: $CR_VERDICT"
