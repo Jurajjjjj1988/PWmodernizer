@@ -141,6 +141,15 @@ jobs:
           # canonical for scenario IDs and required file paths (see
           # prompts/_assembled/generate.md "Required reading").
           npx tsx scripts/plan-envelope-validate.ts --envelope "$ENV"
+          # Stage 1 envelope quality gate (#1): scenario count must match source
+          # test count. Catches "derived-placeholder" envelopes where Stage 1
+          # emitted a single scenario instead of one per source test. Hard-fail
+          # here saves Stage 2 retries (sel-python iter 1 + bad-PW envelope fix
+          # were manual responses to exactly this).
+          INPUT="${{ needs.guard.outputs.input_path }}"
+          npx tsx scripts/validate-envelope-vs-source.ts \
+            --envelope "$ENV" \
+            --input "$INPUT"
           echo "has_envelope=true" >> "$GITHUB_OUTPUT"
         id: envelope
 
