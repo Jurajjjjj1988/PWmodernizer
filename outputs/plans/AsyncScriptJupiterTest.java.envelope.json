@@ -1,0 +1,33 @@
+{
+  "inputBasename": "AsyncScriptJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "loads demo page and completes async JavaScript evaluation @positive",
+      "userAction": "Navigate to the Bonigarcia Selenium WebDriver demo homepage and execute a Promise-based timeout via page.evaluate(), then assert the page title is present as the minimum observable-outcome assertion (reviewer should replace with exact title — see Q4).",
+      "expectedAssertions": [
+        "page title matches /.+/ after navigation (weak guard — reviewer must supply exact title per Q4)",
+        "page.evaluate() with Promise-based timeout resolves without error"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.get(\"https://bonigarcia.dev/selenium-webdriver-java/\")",
+      "target": "await page.goto('/')",
+      "confidence": "high",
+      "notes": "Mechanical navigation translation; host moves to baseURL in playwright.config.ts. No element locators exist in the source — this is the only locator-equivalent entry."
+    }
+  ],
+  "hallucinationDefensePins": [],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -9,
+    "locDelta": -23,
+    "antiPatternCoverage": "8/8"
+  }
+}
