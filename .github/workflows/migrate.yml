@@ -512,15 +512,51 @@ jobs:
           esac
           INVENTORY_BLOCK=$(cat "$INVENTORY_PATH")
           ERRORS_BLOCK=$(cat outputs/.lint-errors.md)
+          # Pre-check qa-master conformance + AST-diff + plan-vs-code coverage
+          # NOW, before handing the error block to Sonnet. Fix-lint #2 idea: if
+          # the spec also fails downstream gates, surface them HERE so the
+          # surgical fix addresses everything at once instead of bouncing through
+          # multiple validate→retry cycles. Soft-collect — failures here are
+          # appended to ERRORS_BLOCK as additional context, not exit.
+          BASE="${{ needs.guard.outputs.input_basename }}"
+          {
+            echo "### qa-master architecture conformance (pre-check)"
+            echo '```'
+            npx tsx scripts/validate-qa-master-conformance.ts \
+              --root outputs \
+              --input-basename "$BASE" 2>&1 || true
+            echo '```'
+            echo ""
+            echo "### plan-vs-code coverage (pre-check)"
+            echo '```'
+            ENV="outputs/plans/${BASE}.envelope.json"
+            if [ -f "$ENV" ]; then
+              npx tsx scripts/plan-envelope-validate.ts \
+                --envelope "$ENV" \
+                --code "outputs/tests" 2>&1 || true
+            fi
+            echo '```'
+          } >> outputs/.lint-errors.md
+          ERRORS_BLOCK=$(cat outputs/.lint-errors.md)
           PROMPT=$(cat <<EOF
           Stage 2 produced code that failed validation. Read the errors below
           and fix the generated code while preserving plan adherence.
+
+          The errors block includes:
+          1. tsc + eslint + playwright parse errors (the immediate validate failure)
+          2. qa-master conformance pre-check (downstream gate, included so your
+             surgical fix addresses architecture issues at the same time)
+          3. plan-vs-code coverage pre-check (orphan/missing scenario pins)
+
+          Fix all three categories in one pass — bouncing through validate →
+          retry → conformance → retry burns turns without addressing the
+          actual misalignment.
 
           ## Plan (must still satisfy)
 
           $PLAN_PATH
 
-          ## Lint/typecheck/parse errors
+          ## All validation errors (lint + conformance + coverage)
 
           $ERRORS_BLOCK
 
