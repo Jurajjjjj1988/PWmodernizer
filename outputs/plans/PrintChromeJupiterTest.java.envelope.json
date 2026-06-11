@@ -1,0 +1,47 @@
+{
+  "inputBasename": "PrintChromeJupiterTest.java",
+  "sourceFramework": "selenium-java",
+  "subtractive": false,
+  "scenarios": [
+    {
+      "id": "1.1",
+      "title": "prints page as PDF and verifies the buffer is a valid PDF file @positive @e2e",
+      "userAction": "Navigate to the Boni Garcia Selenium demo page and generate a PDF using the browser's CDP print-to-PDF API, then assert the returned buffer begins with the PDF magic bytes.",
+      "expectedAssertions": [
+        "page.pdf() returns a Buffer whose first 4 bytes equal '%PDF' in ASCII (equivalently, the base64 encoding starts with 'JVBER'), confirming a valid PDF was produced"
+      ]
+    }
+  ],
+  "requiredPOMs": [],
+  "requiredFixtures": [],
+  "locatorTable": [
+    {
+      "original": "driver.get(\"https://bonigarcia.dev/selenium-webdriver-java/\")",
+      "target": "await page.goto('/selenium-webdriver-java/')",
+      "confidence": "med",
+      "notes": "Requires baseURL: 'https://bonigarcia.dev' in playwright.config.ts. If project already has a different baseURL, fall back to a named constant BONIGARCIA_DEMO_URL with an absolute goto() call — see pin 1 and Q1 in the markdown plan."
+    },
+    {
+      "original": "(PrintsPage) driver; pg.print(new PrintOptions())",
+      "target": "await page.pdf()",
+      "confidence": "high",
+      "notes": "page.pdf() is the direct Playwright CDP equivalent of PrintsPage.print(). Returns Buffer directly — no base64 cast needed. Requires headless Chromium (see Q4 in the markdown plan)."
+    }
+  ],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Navigation target URL for the Boni Garcia Selenium demo page",
+      "assumedLocator": "await page.goto('/selenium-webdriver-java/')",
+      "sourceLocator": "driver.get(\"https://bonigarcia.dev/selenium-webdriver-java/\")",
+      "whyComment": "Q1 unresolved: external demo SUT — if project baseURL already points at a different host, this relative path navigates to the wrong domain. Use absolute URL constant instead.",
+      "reviewerFallback": "If playwright.config.ts already sets a different baseURL, replace with: const BONIGARCIA_DEMO_URL = 'https://bonigarcia.dev/selenium-webdriver-java/'; await page.goto(BONIGARCIA_DEMO_URL); — alternatively, isolate this test in a separate Playwright project with its own baseURL."
+    }
+  ],
+  "expectedMetrics": {
+    "selectorQualityScore": 1.0,
+    "smellCountDelta": -6,
+    "locDelta": -47,
+    "antiPatternCoverage": "6/6"
+  }
+}
