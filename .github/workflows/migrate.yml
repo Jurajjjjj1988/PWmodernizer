@@ -696,7 +696,11 @@ jobs:
           # the corrected line. The match is permissive (any *.spec.ts basename)
           # so it works for snake_case, PascalCase, or already-kebab carryover.
           # sed -i works on Linux runners.
-          sed -E -i "s#outputs/tests/[A-Za-z0-9._-]+\\.spec\\.ts \\([0-9]+ LOC\\)#outputs/tests/${ACTUAL_BASENAME} (${ACTUAL_LOC} LOC)#g" "$REPORT"
+          # The report may wrap the path in backticks (Sonnet's default
+          # markdown style: `\`outputs/tests/x.spec.ts\` (29 LOC)`). The regex
+          # tolerates optional backticks + makes the `(N LOC)` clause optional
+          # so naked filename mentions get corrected too.
+          sed -E -i "s#\`?outputs/tests/[A-Za-z0-9._-]+\\.spec\\.ts\`?( \\([0-9]+ LOC\\))?#\`outputs/tests/${ACTUAL_BASENAME}\` (${ACTUAL_LOC} LOC)#g" "$REPORT"
           echo "Pre-flight: report Output line set to outputs/tests/${ACTUAL_BASENAME} (${ACTUAL_LOC} LOC)"
 
       - name: Report-metric self-consistency (Bullet 12 defense-in-depth)
