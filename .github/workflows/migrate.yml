@@ -290,7 +290,22 @@ jobs:
 
           - Source input: $INPUT_PATH (may be a single file OR a directory)
           - Approved plan: $PLAN_PATH
-          - Output spec path: outputs/tests/$INPUT_BASENAME
+          - Output spec path: outputs/tests/<kebab-case-of-INPUT_BASENAME>.spec.ts
+
+          ## Kebab-case derivation (CRITICAL — sel-python iters 6-9 hallucinated this)
+
+          INPUT_BASENAME is the source file's name. The EMITTED spec must be kebab-cased — NOT the input filename copied verbatim. Examples:
+          - \`using_selenium_tests.py\` → \`using-selenium-tests.spec.ts\` (snake → kebab, .py → .spec.ts)
+          - \`PromptJupiterTest.java\` → \`prompt-jupiter-test.spec.ts\` (Pascal → kebab, .java → .spec.ts)
+          - \`flaky-waits.spec.ts\` → \`flaky-waits.spec.ts\` (already kebab — passthrough)
+          - \`checkout-flow.cy.js\` → \`checkout-flow.spec.ts\` (kebab passthrough, .cy.js → .spec.ts)
+
+          The kebab-cased filename MUST appear verbatim in:
+          1. The spec file path you write under outputs/tests/
+          2. The report's \`Output:\` line (workflow auto-corrects this but emit it right the first time)
+          3. The report's \`## Files produced\` list
+
+          Do NOT carry snake_case or PascalCase from the input into ANY output reference.
 
           If $INPUT_PATH is a directory, treat all source files in it as ONE migration unit. The plan describes the migration of the whole unit; preserve every test, page object, and helper that the plan acknowledges.
           - Output report path: outputs/reports/$INPUT_BASENAME.md
