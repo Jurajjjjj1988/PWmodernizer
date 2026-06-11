@@ -845,6 +845,25 @@ jobs:
           echo "confidence=$CONFIDENCE" >> "$GITHUB_OUTPUT"
           echo "Migration confidence: $CONFIDENCE"
 
+      - name: Track output variability (Sonnet determinism signal)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Append a row to outputs/.usage/variability-log.jsonl with hashes
+          # of input + plan + every emitted output file. Post-hoc analysis
+          # of N runs against the same input+plan shows whether Sonnet's
+          # outputs converge (deterministic — pipeline reliable) or diverge
+          # (model-side noise dominates — needs calibration). continue-on-error
+          # because variability tracking is diagnostic, not a gate.
+          npx tsx scripts/track-output-variability.ts \
+            --input "${{ needs.guard.outputs.input_path }}" \
+            --plan "${{ needs.guard.outputs.plan_path }}" \
+            --basename "${{ needs.guard.outputs.input_basename }}" \
+            --run-id "${{ github.run_id }}" \
+            --confidence "${{ steps.evaluate.outputs.confidence }}" \
+            --attempt "1"
+
       - name: Determine confidence label
         id: clabel
         shell: bash
