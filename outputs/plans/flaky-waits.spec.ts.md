@@ -2,168 +2,190 @@
 
 ## Source framework
 
-bad-playwright
+**bad-playwright** — subtractive migration, no framework translation required. Source is already Playwright TypeScript; the migration removes anti-patterns and wires the qa-master layered architecture (PageClass + fixture injection) without adding new framework imports beyond the `@fixtures/base.fixture` barrel in the spec.
 
----
+**Source file:** `inputs/bad-playwright/flaky-waits.spec.ts`
+
+> **Regeneration note (2026-06-10 — addressing CANDOR START-OVER verdict):**
+> Changes vs the rejected plan: (1) `KB-1.4.12` corrected to `KB-1.1.14` — hardcoded-URL anti-pattern is the bad-Playwright namespace, not Selenium-Python; (2) `KB-1.2.5` citation removed for env-var credentials — Cypress custom-command sprawl is off-topic; credentials are now cataloged under `KB-1.1.9`; (3) `Extract POM: No` changed to `Yes` — `migration-rules.md` §1–§4 mandate a PageClass for every page in a qa-master migration; (4) greeting oracle defaults to the **full phrase regex** `/welcome back, jane/i` (not bare `'Jane'`) to preserve the original bug class — Q8 asks the reviewer to confirm; (5) per-assertion timeout override on the error-banner defaults to **no override** — use Playwright framework default, reviewer must authorise Q7 before Stage 2 applies `{ timeout: 10_000 }`; (6) metrics updated for PageClass architecture (selector quality 4/5 = 0.80, positive LOC delta); (7) hallucination-defense pins populated (were empty in the rejected envelope).
 
 ## Summary
 
-This test exercises the Acme Shop login page for two user-facing scenarios: signing in with valid credentials (expecting a personalized dashboard greeting) and submitting wrong credentials (expecting an inline error banner). The source file is structurally valid Playwright TypeScript but suffers from five `waitForTimeout` hard waits, four CSS-class/id-based locators with no semantic grounding, two one-shot synchronous assertion probes, and a conditional `if/else` block that makes one test assertion optional. Together these defects make the suite highly sensitive to backend latency and DOM class renames. The migration must eliminate all timing hard-codes, promote locators toward role/label semantics where evidence allows, and replace the conditional block with a direct web-first assertion.
+Login flow for the Acme Shop storefront. Two scenarios: valid credentials navigate the user to the dashboard with a personalised greeting, and a wrong password keeps the user on the login page with a visible error banner. The source spec passes locally but is severely timing-sensitive — five `waitForTimeout` calls, three sync-probe assertions, one conditional-logic block — and leaks credentials as committed plaintext.
 
----
+### What bug does this catch?
+
+Catches a regression where the login form silently accepts bad credentials without surfacing the error banner, or where a valid login fails to navigate the user to the dashboard and render the personalised greeting.
+
+### User-perceivable assertion checklist
+
+- [ ] After valid login: dashboard greeting element is visible
+- [ ] After valid login: greeting text matches `/welcome back, jane/i` (full greeting phrase + user identity — see Q8)
+- [ ] After invalid login: error banner appears containing `/invalid credentials/i`
+- [ ] After invalid login: URL remains matching `/\/login/` (does NOT redirect to dashboard)
 
 ## Anti-patterns detected
 
-| Line(s) | Snippet | KB ref | Severity | Fix in plan |
-|---|---|---|---|---|
-| 8 | `await page.waitForTimeout(2000)` | KB-1.1.1: Hard waits via `waitForTimeout` | block | Replace with a web-first assertion on the stable login-page landmark after `goto` (e.g. `await expect(emailInput).toBeVisible()`). Exact locator is TBD — see Q1. |
-| 13 | `await page.waitForTimeout(500)` | KB-1.1.1: Hard waits via `waitForTimeout` | block | Remove entirely. Playwright's `fill()` auto-waits for the input to be actionable; no inter-field delay is needed. |
-| 15 | `await page.waitForTimeout(500)` | KB-1.1.1: Hard waits via `waitForTimeout` | block | Remove entirely. Same rationale as line 13. |
-| 18 | `await page.waitForTimeout(3000)` | KB-1.1.1: Hard waits via `waitForTimeout` | block | Remove. The subsequent web-first assertion `await expect(dashboardGreeting).toContainText(...)` auto-polls until `actionTimeout`, making this wait redundant. |
-| 29 | `await page.waitForTimeout(7000)` | KB-1.1.1: Hard waits via `waitForTimeout` | block | Remove. 7 s exceeds the project's `actionTimeout: 5_000`. Replace with `await expect(errorLocator).toContainText('Invalid credentials')`. If the real backend error response exceeds 5 s, a per-assertion `{ timeout: 10_000 }` override must be added with a comment — see Q8 and Risk callouts. |
-| 7 | `await page.goto('https://shop.acme.test/login')` | KB-1.4.12: Hardcoded environment URL | warn | Replace with `await page.goto('/login')` and ensure `baseURL` is read from `process.env.BASE_URL` in `playwright.config.ts`. |
-| 20 | `expect(await page.locator('.dashboard-greeting').isVisible()).toBe(true)` | KB-1.1.5: Synchronous probe instead of web-first | block | Replace with `await expect(dashboardGreeting).toContainText('Welcome back, Jane')`. The `toContainText` matcher auto-retries and subsumes the visibility check, making the standalone `isVisible` probe redundant. |
-| 21 | `expect(await page.locator('.dashboard-greeting').innerText()).toContain(…)` | KB-1.1.5: Synchronous probe instead of web-first | block | Merged into the fix for line 20 — a single `toContainText` replaces both probes. |
-| 31–36 | `if (await errorBanner.isVisible()) { … } else { throw … }` | KB-1.1.12: Conditional logic inside test body | block | Replace the entire if/else block with `await expect(errorBanner).toContainText('Invalid credentials')`. Web-first `toContainText` retries until timeout and emits a clear failure if the element never appears — the manual `throw` is redundant and the `if` makes the assertion optional. |
-| 33 | `expect(await errorBanner.innerText()).toContain('Invalid credentials')` | KB-1.1.5: Synchronous probe | block | Subsumed by the conditional-logic fix above. |
-| 20–21, 31–33 | `page.locator('.dashboard-greeting')`, `page.locator('.error-banner')` | KB-1.1.3: CSS-class as primary selector | warn | No DOM evidence for role or accessible name. Default to `locator('.dashboard-greeting')` / `locator('.error-banner')` with LOW confidence in the locator table; reviewer should add `data-testid` attributes or confirm `role="alert"` on the error banner — see Q3, Q4. |
-| 12, 25 | `page.locator('#email')` | KB-1.1.3: Non-semantic id selector (locator priority) | info | Can be upgraded to `getByLabel(/email/i)` with MED confidence if the input has an associated `<label>`. See Locator translation table Q2. |
-| 14, 26 | `page.locator('#password')` | KB-1.1.3: Non-semantic id selector (locator priority) | info | Can be upgraded to `getByLabel(/password/i)` with MED confidence. Same rationale as `#email`. |
-| 21 | `'Welcome back, Jane'` (hardcoded first name) | KB-1.1.9: Magic numbers / magic strings | warn | "Jane" is the display name of the specific test user `jane.doe@acme.test`. Extract to a named constant (`VALID_USER_DISPLAY_NAME`) or use a regex (`/Welcome back,/i`) that does not couple the assertion to the exact name — see Q6. |
-| 12, 14, 25, 26 | `'jane.doe@acme.test'`, `'Sup3rSecret!'`, `'wrong-password'` | KB-1.1.9: Magic strings (inline credentials) | warn | Credentials are hardcoded inline. Should come from `process.env.TEST_USER_EMAIL` / `process.env.TEST_USER_PASSWORD` (valid path) and a symbolic constant for the invalid password — see Q7. |
+| Severity | Line | KB-ID | Anti-pattern | Snippet (≤60 chars) | Replacement |
+|---|---|---|---|---|---|
+| H | 8 | KB-1.1.1 | hard-wait | `page.waitForTimeout(2000)` | `waitForPageLoad()` web-first guard in PageClass `open()` |
+| H | 13 | KB-1.1.1 | hard-wait | `page.waitForTimeout(500)` between fills | remove — `fill()` auto-waits for actionability |
+| H | 15 | KB-1.1.1 | hard-wait | `page.waitForTimeout(500)` after fill | remove entirely |
+| H | 18 | KB-1.1.1 | hard-wait | `page.waitForTimeout(3000)` post click | `await expect(loginPage.textDashboardGreeting).toBeVisible()` |
+| H | 29 | KB-1.1.1 | hard-wait | `page.waitForTimeout(7000)` post bad-login | `await expect(loginPage.alertErrorBanner).toContainText(…)` — see Q7 re: timeout |
+| H | 7 | KB-1.1.14 | hardcoded-url | `'https://shop.acme.test/login'` | configure `baseURL`; `loginPage.open()` calls `page.goto(this.url)` |
+| H | 20 | KB-1.1.5 | sync-probe | `expect(await el.isVisible()).toBe(true)` | `await expect(loginPage.textDashboardGreeting).toBeVisible()` |
+| H | 21 | KB-1.1.19 | innerText-sync-probe | `expect(await el.innerText()).toContain(…)` | `await expect(loginPage.textDashboardGreeting).toContainText(…)` |
+| H | 33 | KB-1.1.19 | innerText-sync-probe | `expect(await errorBanner.innerText()).toContain(…)` | `await expect(loginPage.alertErrorBanner).toContainText(…)` |
+| H | 32–35 | KB-1.1.12 | conditional-logic | `if (await el.isVisible()) {…} else { throw }` | direct `await expect(loginPage.alertErrorBanner).toContainText(…)` |
+| M | 12 | KB-1.1.9 | magic-string (credential) | `'jane.doe@acme.test'` | `VALID_EMAIL = process.env.TEST_USER_EMAIL` |
+| M | 14 | KB-1.1.9 | magic-string (credential) | `'Sup3rSecret!'` | `VALID_PASSWORD = process.env.TEST_USER_PASSWORD` |
+| M | 21 | KB-1.1.9 | magic-string (display-name) | `'Welcome back, Jane'` | `VALID_USER_DISPLAY_NAME = 'Jane'` constant + full-phrase regex |
+| M | 25 | KB-1.1.9 | magic-string (credential) | `'jane.doe@acme.test'` (test 2) | same `VALID_EMAIL` constant |
+| M | 26 | KB-1.1.9 | magic-string (bad-password) | `'wrong-password'` | `INVALID_PASSWORD = 'wrong-password'` constant |
+| M | 20–21 | KB-1.1.3 | css-class | `page.locator('.dashboard-greeting')` | retain CSS at LOW confidence (see pin 4); request `data-testid` |
+| M | 31 | KB-1.1.3 | css-class | `page.locator('.error-banner')` | `getByRole('alert')` at MED confidence (see pin 5) |
+| M | 17, 27 | KB-1.2.6 | ambiguous-text | `page.getByText('Sign in')` (×2) | `getByRole('button', { name: /sign in/i })` at MED confidence (see pin 3) |
+| L | 4–5 | KB-1.1.15 | nested-describe | `describe('Acme Shop login') > describe('credentials')` | flatten to single `test.describe` — inner block has no siblings |
 
-### Unclassified smells
-
-- **Unnecessary double-nesting (`test.describe('credentials')` inside `test.describe('Acme Shop login')`)**: With only two tests, the inner `describe` adds hierarchy without grouping value. The outer describe could be flattened, or the inner describe could be renamed to make it semantically distinct (e.g. `'happy path'` vs `'error path'`). Not in the knowledge base; flagging for reviewer decision.
-- **Test title on line 11 — "user can sign in…"**: Starts with "user can" rather than a present-tense verb. Migration-rules §2 requires titles to start with a verb (e.g. "signs in with valid credentials"). Flagging; Stage 2 should rename.
-- **`import { test, expect } from '@playwright/test'` — direct framework import**: Migration-rules §2 requires importing `test` from the project fixture file (`../../fixtures/pages.fixture`) so that fixture extensions and `expect` re-exports are co-located. Flagging for Stage 2 to wire the import correctly once a fixture path is confirmed — see Q9.
-- **`page.getByText('Sign in').click()` on an interactive element (lines 17, 27)**: `getByText` is Tier 3 in the locator hierarchy; for a clickable element `getByRole('button', { name: /sign in/i })` (Tier 1) is preferred. No KB entry covers this exact bad-Playwright idiom; including here for completeness. See Locator translation table entry for lines 17/27.
-
----
+Total: **19 cataloged instances** across 9 KB-IDs.
 
 ## Locator translation table
 
-| Line(s) | Source locator | Element role/purpose | Proposed target locator | Confidence | Evidence |
-|---|---|---|---|---|---|
-| 12, 25 | `page.locator('#email')` | Email address input field | `page.getByLabel(/email/i)` | MED | Id `email` strongly suggests an email input, and the form convention implies a `<label>` for `email`, but no DOM snapshot confirms the label text. Preserve `page.locator('#email')` as fallback if label is absent — see Q2. |
-| 14, 26 | `page.locator('#password')` | Password input field | `page.getByLabel(/password/i)` | MED | Same rationale as `#email`. Standard login forms universally label the password field; no DOM snapshot to confirm — see Q2. |
-| 17, 27 | `page.getByText('Sign in')` | Sign-in submit trigger | `page.getByRole('button', { name: /sign in/i })` | MED | The element is used with `.click()` in a form-submission context, making a `<button>` or `<input type="submit">` likely. However `getByText` matches any element — could be a styled `<a>` or `<div>`. **Review needed: confirm element tag before upgrading to `getByRole`.** Fallback: `page.getByText('Sign in', { exact: true })` (HIGH confidence, keeps current semantics) — see Q5. |
-| 20, 21 | `page.locator('.dashboard-greeting')` | Personalized welcome message on the dashboard | `page.locator('.dashboard-greeting')` | LOW | CSS class only; no DOM evidence of role, `aria-label`, or `data-testid`. Cannot propose `getByRole` or `getByText` without knowing the element tag and runtime text. Reviewer should add a `data-testid="dashboard-greeting"` to the component or confirm a heading role — see Q3. |
-| 31, 32, 33 | `page.locator('.error-banner')` | Inline error banner displayed after failed auth | `page.getByRole('alert')` | MED | Error notifications frequently carry `role="alert"` in accessible implementations; `.error-banner` class name reinforces this guess. If the element lacks a role, fallback is `page.locator('.error-banner')` (LOW). If `.error-banner` matches multiple elements on the page, scope with `.filter({ hasText: /invalid credentials/i })` — see Q4. |
+All five locators become `readonly Locator` fields on `PageClassAcmeShopLogin`.
 
-**Hallucination-defense pins for Stage 2:**
+| Original | New (PageClass field → locator) | Confidence | Notes |
+|---|---|---|---|
+| `page.locator('#email')` | `inputEmail` → `this.page.getByLabel(/email/i)` | med | Assumes `<label for="email">` exists. Fallback: `getByRole('textbox', { name: /email/i })`. See pin 1. |
+| `page.locator('#password')` | `inputPassword` → `this.page.getByLabel(/password/i)` | med | Same assumption as email. Fallback: `getByRole('textbox', { name: /password/i })`. See pin 2. |
+| `page.getByText('Sign in')` | `buttonSignIn` → `this.page.getByRole('button', { name: /sign in/i })` | med | Probably `<button>` or `<input type=submit>`; could be a link or div. Fallback: `getByText('Sign in', { exact: true })`. See pin 3. |
+| `page.locator('.dashboard-greeting')` | `textDashboardGreeting` → `this.page.locator('.dashboard-greeting')` | low | No DOM evidence for a semantic role. CSS class retained; request `data-testid="dashboard-greeting"`. See pin 4. |
+| `page.locator('.error-banner')` | `alertErrorBanner` → `this.page.getByRole('alert')` | med | Error banners commonly carry `role="alert"`. Fallback: `page.locator('.error-banner')`. See pin 5. |
 
-1. `page.locator('#email')` / `page.locator('#password')` — do **not** upgrade to `getByRole('textbox')` without DOM evidence. The `#id` carries no role information. If `getByLabel` is not confirmed by reviewer, keep `page.locator('#email')` / `page.locator('#password')` at HIGH confidence.
-2. `page.getByText('Sign in')` — do **not** silently promote to `getByRole('button')`. If reviewer confirms it is a `<button>`, promote with HIGH confidence. Otherwise keep `getByText('Sign in', { exact: true })`.
-3. `page.locator('.dashboard-greeting')` — do **not** invent a role or accessible name. No role evidence exists. Keep `locator('.dashboard-greeting')` and add an inline comment requesting a `data-testid`.
-4. `page.getByRole('alert')` for `.error-banner` — emit with MED confidence and a reviewer flag.
+## Hallucination-defense pins
 
----
+1. **Email input** — assumed `this.page.getByLabel(/email/i)`. If DOM has no `<label>` associated with `#email`: keep `this.page.locator('#email')`, add WHY-comment `'Q1 unresolved: label association for #email not confirmed'`. Reviewer fallback: inspect DOM for `<label for="email">` or confirm placeholder-only styling, then switch to `getByPlaceholder(/email/i)`.
+
+2. **Password input** — assumed `this.page.getByLabel(/password/i)`. If DOM has no `<label>` associated with `#password`: keep `this.page.locator('#password')`, add WHY-comment `'Q2 unresolved: label association for #password not confirmed'`. Reviewer fallback: same investigation as pin 1.
+
+3. **Sign-in button** — assumed `this.page.getByRole('button', { name: /sign in/i })`. If element is not a native `<button>` (e.g. it is an `<a>` or styled `<div>`): keep `this.page.getByText('Sign in', { exact: true })`, add WHY-comment `'Q3 unresolved: button role not confirmed — element may not be native <button>'`. Reviewer fallback: ask FE team to confirm semantic element type or add `role="button"`.
+
+4. **Dashboard greeting** — assumed `this.page.locator('.dashboard-greeting')` (CSS class retained; LOW confidence for any role-based upgrade). If DOM evidence confirms element is a heading: upgrade to `this.page.getByRole('heading', { name: /welcome back/i })`. If a `data-testid` is added: upgrade to `this.page.getByTestId('dashboard-greeting')`. Add WHY-comment `'Q4 unresolved: greeting element role unknown — CSS class retained'`. Reviewer fallback: request `data-testid="dashboard-greeting"` from FE team.
+
+5. **Error banner** — assumed `this.page.getByRole('alert')`. If DOM lacks `role="alert"` or `aria-live`: keep `this.page.locator('.error-banner')`, add WHY-comment `'Q5 unresolved: alert role not confirmed on .error-banner'`. Reviewer fallback: ask team to add `role="alert"` to the error banner component, or use `getByTestId('login-error')` if a testid exists.
 
 ## Structural changes
 
-- **Extract POM:** No. The test file is ~39 LOC and exercises a single login page plus a brief post-login dashboard view. This is well under the 200 LOC threshold defined in migration-rules §1. Inline locators are the correct default.
-- **Extract fixture:** No — but consider. The `beforeEach` navigation and credential constants could live in a fixture, but they are used by only one spec file, and migration-rules §1 says to extract a fixture only when setup is needed by ≥2 test files or involves non-trivial auth/mocking. The current setup (`goto` + a readiness assertion) is trivially inline. Credential constants belong in `data/acme-login-fixtures.ts` (see Q7).
-- **Split into multiple specs:** No. Two tests, one feature (login). Splitting would create two single-test files with duplicated `beforeEach`, which is worse.
-- **Inline everything:** Yes — the correct default for this size and scope.
-- **Describe restructuring:** Flatten the two-level `describe` to a single `test.describe('Acme Shop login')`. The inner `'credentials'` describe adds no grouping value and slightly obscures test path reporting. If the reviewer wants to differentiate happy/error paths, rename the inner describe to `'happy path'` and `'error path'` and add a second top-level or second-level describe as appropriate — but still within the two-level maximum.
-- **Test data file:** A minimal `data/acme-login-fixtures.ts` exporting `VALID_USER` (email + password) and `INVALID_PASSWORD` and `VALID_USER_DISPLAY_NAME` constants is recommended (not strictly an extraction trigger, but avoids inline magic strings per KB-1.1.9). Stage 2 may inline them as named `const` at the top of the spec file if no data file exists yet.
+The qa-master architecture (`migration-rules.md` §1–§4, v0.2.0 default) mandates a PageClass for every page visited by the spec. This migration therefore produces a PageClass even though the source spec is short.
 
----
+- **Extract POM: yes** — `PageClassAcmeShopLogin` at `outputs/helper/page-object/pages/acme-shop-login.page.ts`. Five `readonly` locator fields (type-prefixed): `inputEmail`, `inputPassword`, `buttonSignIn`, `textDashboardGreeting`, `alertErrorBanner`. Methods: `open()`, `fillCredentials(email: string, password: string)`, `clickSignIn()`, `waitForPageLoad()`. No own constructor (BasePage wires `page`).
+- **Extract block: no** — single-section page, no cross-page or multi-instance reuse.
+- **Extend fixture: yes** — mutate `outputs/helper/fixtures/base.fixture.ts` to add `acmeShopLoginPage: PageClassAcmeShopLogin` injection.
+- **Split spec: no** — both scenarios target the same page and share a `beforeEach` navigate. One file.
+- **Flatten describe: yes** — remove inner `test.describe('credentials')` whose only children are the two tests; outer `test.describe('Acme Shop login')` is sufficient.
+- **Extract credential constants: yes** — `VALID_EMAIL`, `VALID_PASSWORD`, `INVALID_PASSWORD`, `VALID_USER_DISPLAY_NAME` at spec top-of-file (secrets sourced from `process.env`; named literal for display name and bad-password).
+- **Test-data files:** add `URL_ACME_SHOP_LOGIN = '/login'` to `outputs/helper/test-data/urls.ts`; add `LABEL_ACME_SHOP_LOGIN = 'AcmeShopLogin'` to `outputs/helper/test-data/labels.ts`.
+
+### Summary table
+
+| Layer | File path | Why it exists |
+|---|---|---|
+| Page | `outputs/helper/page-object/pages/acme-shop-login.page.ts` | Owns all 5 login-page locators + `open()`, `fillCredentials()`, `clickSignIn()`, `waitForPageLoad()` — qa-master mandatory PageClass |
+| Block | (none) | Single page section, no cross-page reuse |
+| Fixture | `outputs/helper/fixtures/base.fixture.ts` (mutate) | Add `acmeShopLoginPage: PageClassAcmeShopLogin` injection |
+| API | (none) | No data prep — both scenarios drive the UI login flow directly |
+| Action | (none) | Single-page journey |
+| Utility | (none) | No DOM string parsing required |
+| Test-data | `outputs/helper/test-data/urls.ts` (mutate) | Add `URL_ACME_SHOP_LOGIN = '/login'` |
+| Test-data | `outputs/helper/test-data/labels.ts` (mutate) | Add `LABEL_ACME_SHOP_LOGIN = 'AcmeShopLogin'` |
+| Type | (none) | No new type shapes needed |
+| Spec | `outputs/tests/flaky-waits.spec.ts` | The migrated spec |
 
 ## Open questions for reviewer
 
 ```
-Q1: What stable DOM element can replace waitForTimeout(2000) in beforeEach?
-Context: Line 8 — the goto('/login') is followed by a 2s hard wait before each test runs.
-What I assumed (if proceeding without an answer): Use `await expect(emailInput).toBeVisible()` (where emailInput is #email / getByLabel('email')). This is the most logical readiness signal for a login page.
-Impact if my assumption is wrong: If the email input is not the first stable element (e.g., it's injected by a slow JS bundle after a splash screen), the readiness assertion may time out. A heading or a visible form container might be a better anchor.
+Q1: Does the #email input have an associated <label for="email">?
+Context: page.locator('#email') lines 12, 25.
+What I assumed: label exists → getByLabel(/email/i).
+Impact if wrong: locator resolves to null; spec fails immediately with "no element found".
+If placeholder-only: switch to getByPlaceholder(/email/i) or getByRole('textbox', { name: /email/i }).
 ```
 
 ```
-Q2: Do the #email and #password inputs have associated <label> elements? If so, what is the label text?
-Context: Lines 12, 14, 25, 26 — id selectors are used. Upgrading to getByLabel requires knowing the label text.
-What I assumed (if proceeding without an answer): Labels exist with text /email/i and /password/i respectively (standard login form pattern). Emitted as MED confidence.
-Impact if my assumption is wrong: getByLabel will throw "no element found" if labels are absent or use different text (e.g. "E-mail address" or "Username"). Fallback: keep page.locator('#email') / page.locator('#password') at HIGH confidence.
+Q2: Does the #password input have an associated <label>?
+Context: page.locator('#password') lines 14, 26.
+What I assumed: label exists → getByLabel(/password/i).
+Impact if wrong: same as Q1.
 ```
 
 ```
-Q3: What is the .dashboard-greeting element? Does it have a role, aria-label, or data-testid?
-Context: Lines 20–21 — the locator is a CSS class with no semantic information.
-What I assumed (if proceeding without an answer): No role evidence — keeping page.locator('.dashboard-greeting') at LOW confidence with a comment asking for a data-testid.
-Impact if my assumption is wrong: If the element is a heading (e.g. <h2>) and the page later gains multiple headings, the locator may become ambiguous. A data-testid="dashboard-greeting" is the cleanest long-term fix.
+Q3: Is the "Sign in" trigger a native <button> or <input type=submit>?
+Could it be an <a> or a <div> with a click handler?
+Context: page.getByText('Sign in').click() lines 17, 27.
+What I assumed: native button → getByRole('button', { name: /sign in/i }).
+Impact if wrong: getByRole('button') matches nothing; click never fires; test fails.
 ```
 
 ```
-Q4: Does .error-banner carry role="alert" in the DOM?
-Context: Lines 31–33 — the error banner locator is a CSS class. getByRole('alert') is proposed at MED confidence.
-What I assumed (if proceeding without an answer): getByRole('alert') is used as the primary proposal. If no role="alert", the fallback is page.locator('.error-banner').
-Impact if my assumption is wrong: If role="alert" is absent, getByRole('alert') will not find the element. If there are other alerts on the page (e.g., cookie consent), scope with .filter({ hasText: /invalid credentials/i }) to disambiguate.
+Q4: What is the DOM element type of .dashboard-greeting?
+Is it a heading (<h1>–<h6>), a <p>, or an unsemantic <div>?
+Context: page.locator('.dashboard-greeting') lines 20–21.
+What I assumed: role unknown → CSS class retained at LOW confidence.
+Impact if wrong: any role-based upgrade targets the wrong element and breaks the test.
 ```
 
 ```
-Q5: Is the "Sign in" trigger a <button>, <input type="submit">, or a styled <a>/<div>?
-Context: Lines 17, 27 — page.getByText('Sign in').click() is used.
-What I assumed (if proceeding without an answer): Proposing getByRole('button', { name: /sign in/i }) at MED confidence with a reviewer flag.
-Impact if my assumption is wrong: If it is a link (<a>), the correct locator is getByRole('link', { name: /sign in/i }). If it is a <div> with a click handler, there is no accessible role and page.getByText('Sign in', { exact: true }) should be kept.
+Q5: Does .error-banner carry role="alert" or aria-live="assertive" in the DOM?
+Context: page.locator('.error-banner') lines 31–33.
+What I assumed: role="alert" is present → getByRole('alert').
+Impact if wrong: getByRole('alert') resolves to empty locator; assertion vacuously passes
+even when the error banner is absent — the test silently fails to catch regressions.
 ```
 
 ```
-Q6: Should "Welcome back, Jane" be an exact match or a pattern assertion?
-Context: Line 21 — the display name "Jane" is hardcoded. This ties the assertion to the specific test user's display name.
-What I assumed (if proceeding without an answer): Extract to a VALID_USER_DISPLAY_NAME constant ('Jane') defined alongside the test credentials, and use toContainText(VALID_USER_DISPLAY_NAME) so it is one-place-to-update.
-Impact if my assumption is wrong: If the app's display format changes (e.g., "Welcome back, Jane Doe" or locale-aware "Vítejte, Jane"), the hardcoded match fails. Using /Welcome back,/i as a regex assertion is more resilient but loses the per-user identity check.
+Q6: Are TEST_USER_EMAIL and TEST_USER_PASSWORD already provisioned as CI environment variables?
+Context: credentials hardcoded at lines 12, 14, 25.
+What I assumed: CI env vars exist per project convention.
+Impact if wrong: CI run fails with "missing env var" — which IS the correct failure.
+Committed plaintext is unacceptable and the migration makes this explicit.
 ```
 
 ```
-Q7: Should test credentials come from env vars or a data file?
-Context: Lines 12, 14, 25, 26 — email and passwords are hardcoded inline.
-What I assumed (if proceeding without an answer): Emit named constants at the top of the spec (VALID_EMAIL, VALID_PASSWORD, INVALID_PASSWORD) as a minimum improvement. If a data/acme-login-fixtures.ts exists, Stage 2 should import from there. Credentials should ultimately come from process.env.TEST_USER_EMAIL / process.env.TEST_USER_PASSWORD per KB-1.2.5 precedent.
-Impact if my assumption is wrong: If the test user's password is rotated in staging, every hardcoded occurrence silently breaks. Env vars allow credential rotation without code changes.
+Q7: Does the backend genuinely need >5 seconds to return the invalid-login error response?
+Context: page.waitForTimeout(7000) at line 29.
+What I assumed: the 7 s was a defensive over-wait, NOT real backend latency.
+Stage 2 default: NO per-assertion timeout override — use Playwright's actionTimeout: 5_000.
+Reviewer must explicitly authorise { timeout: 10_000 } on the alertErrorBanner assertion
+if CI evidence shows the backend genuinely needs more than 5 s.
+Impact if assumption wrong: the error-banner assertion will timeout consistently in CI,
+surfacing a real backend latency issue that the hard-wait was masking.
 ```
 
 ```
-Q8: Does the backend error response for a wrong password genuinely take >5 s?
-Context: Line 29 — waitForTimeout(7000) implies the dev observed a 5–7 s error response.
-What I assumed (if proceeding without an answer): Replace with web-first toContainText using the default actionTimeout: 5_000. If that fails on CI, add { timeout: 10_000 } to only this assertion with an inline comment explaining the backend latency.
-Impact if my assumption is wrong: If the backend genuinely needs 6–7 s to return an auth error, the migrated test will flake on CI under the default 5 s timeout. This is a real latency bug that the 7 s wait was masking — surfacing it is correct, but we must set an appropriate explicit timeout rather than leaving it silently broken. See Risk callouts.
+Q8: Should the dashboard greeting assertion preserve the full "Welcome back, Jane" form?
+Context: expect(await el.innerText()).toContain('Welcome back, Jane') at line 21.
+Plan default: FULL PHRASE REGEX — toContainText(new RegExp(`Welcome back, ${VALID_USER_DISPLAY_NAME}`, 'i')).
+This preserves both the greeting phrase ("Welcome back") AND the user identity ("Jane"),
+matching the original assertion's bug class.
+Asserting only VALID_USER_DISPLAY_NAME (bare 'Jane') is oracle dilution: any text node
+containing "Jane" (e.g. "Jane Doe joined yesterday") would pass without a product signal.
+Impact if reviewer overrides to bare name: test no longer catches a page that renders the
+wrong greeting structure while incidentally containing "Jane" in unrelated content.
 ```
-
-```
-Q9: What is the project fixture file path for importing `test`?
-Context: Line 1 — import { test, expect } from '@playwright/test'. Migration-rules §2 requires importing from the project fixture file.
-What I assumed (if proceeding without an answer): Using ../../fixtures/pages.fixture as the import path per the migration-rules §2 skeleton. If the project has a different fixture path, Stage 2 must update the import.
-Impact if my assumption is wrong: Broken import path → TypeScript compile error at Stage 2. If no fixture file exists yet, Stage 2 should create fixtures/pages.fixture.ts that re-exports test and expect from @playwright/test.
-```
-
-```
-Q10: Is the login page at '/login' the correct relative path (after stripping the hardcoded domain)?
-Context: Line 7 — https://shop.acme.test/login.
-What I assumed (if proceeding without an answer): The path segment /login is correct and baseURL will be set to process.env.BASE_URL ?? 'http://localhost:3000'.
-Impact if my assumption is wrong: If the app serves the login page at a different path (e.g. /auth/login or /sign-in), the goto call will navigate to a 404 and every test in the file will fail.
-```
-
----
 
 ## Risk callouts
 
-- **7-second wait masking real backend latency (line 29):** The `waitForTimeout(7000)` on the error path suggests the auth rejection response takes 5–7 seconds. Replacing with a web-first assertion under the default `actionTimeout: 5_000` will surface this as a real flake. This is the test now *correctly* catching a bug rather than hiding it. The reviewer must decide: accept that the test correctly reports a slow backend, or add `{ timeout: 10_000 }` to this assertion alone with a comment naming the latency budget.
-
-- **No network mocking — real backend required:** Both tests hit `https://shop.acme.test` directly. If the backend is unavailable, both tests fail together and the failure is indistinguishable from a product regression. Consider adding `page.route` stubs for `/login` responses as an opt-in via a fixture option, so CI can run a fast stubbed variant alongside the full E2E run.
-
-- **Hardcoded display name "Jane" is brittle:** The assertion `toContainText('Welcome back, Jane')` will fail if: (a) the test user is re-created with a different display name, (b) the app introduces locale-aware greeting text, or (c) the name format changes. Migrating to a named constant + regex fallback reduces this risk but does not eliminate it.
-
-- **Behavioural drift from removing the 2 s beforeEach wait:** The original `waitForTimeout(2000)` in `beforeEach` may have been silently absorbing a login-page hydration delay (JS bundle, cookie-consent overlay, etc.). The replacement web-first assertion on the email input will surface any such delay as an `actionTimeout` failure, which is correct — but the first CI run after migration may reveal a legitimate slow-loading page that needs investigation.
-
-- **Assertion on `.dashboard-greeting` is single-locator, two assertions in source:** The source makes two sequential one-shot probes on the same element (visible check + text check). Web-first `toContainText` subsumes both. The net result is one assertion instead of two, which is correct and simpler — but reviewers should confirm the removed `isVisible` check is not independently valuable (e.g., if the element can exist in the DOM while not being visible to the user, `toBeVisible` before `toContainText` would still be warranted).
-
-- **No cleanup / state isolation:** Neither test clears cookies, localStorage, or auth state between runs. Playwright's default `page` fixture is test-scoped (fresh context per test), so this is handled implicitly. However, if the project ever switches to a shared browser context (`storageState` or worker-scoped page), auth state from test 1 (valid login) could bleed into test 2 (wrong password). The migration should keep the default test-scoped page fixture.
-
----
+- **Backend latency on invalid login.** The 7-second `waitForTimeout` before the error-banner assertion (line 29) may compensate for a real server-side rate-limit cooldown. Replacing with the default-timeout web-first assertion will surface this as a consistent CI timeout — see Q7. Resolve before merge.
+- **Dashboard greeting element role unknown.** Plan retains `.dashboard-greeting` CSS class at LOW confidence. If FE renames the class in a refactor, the test breaks silently with no product regression signal. Mitigation: request `data-testid="dashboard-greeting"`.
+- **Parallel-run credential collision.** Both tests use the same `VALID_EMAIL` account. With `fullyParallel: true`, two workers may submit concurrent login requests. Acme Shop may have per-account session limits or rate-limiting that causes one to fail non-deterministically. See Q6.
+- **No URL assertion after valid login.** The source test does not assert URL post-navigation. A page that coincidentally renders a matching greeting at a non-dashboard URL would pass. Recommend adding `await expect(page).toHaveURL(/\/dashboard/)` after the greeting assertion.
+- **Oracle dilution risk.** If Q8 is overridden to use only the bare display name constant, any text node containing "Jane" satisfies the assertion. The plan defaults to the full phrase regex to prevent this.
+- **Missing network mocking.** Both tests hit the real `shop.acme.test` backend. If the backend is unavailable, both fail together indistinguishably from a product regression.
 
 ## Expected metrics
 
-- **Selector quality score (estimated post-migration):** 3–4 / 5 unique locators will be role/label-based if MED-confidence proposals are confirmed (0.60–0.80). Target ≥0.70 is achievable if `#email`, `#password`, and `Sign in` are confirmed; `.dashboard-greeting` is the only locator that may remain CSS-only.
-- **Smell count delta vs source:** −5 hard waits (KB-1.1.1), −5 synchronous probes (KB-1.1.5), −1 conditional logic block (KB-1.1.12), −3 CSS/non-semantic locators (where MED upgrades are confirmed), −1 hardcoded URL, −2 hardcoded credentials/magic strings = **−17 smells**, +0 new smells introduced.
-- **LOC delta:** Source ~39 LOC → target ~28–34 LOC. Reduction comes from eliminating 5 `waitForTimeout` lines, collapsing the 6-line conditional block to 1 line, and merging the two one-shot probes in test 1 into a single assertion. Imports and describe scaffolding are stable.
-- **Anti-pattern coverage:** 14 cataloged anti-pattern instances / ~14 estimated total = 14/14. Three unclassified smells noted outside the KB catalog.
+- **Selector quality score (estimated post-migration):** 0.80 (4/5 locators canonical: `inputEmail` getByLabel, `inputPassword` getByLabel, `buttonSignIn` getByRole, `alertErrorBanner` getByRole; `textDashboardGreeting` CSS class retained pending pin 4 resolution).
+- **Smell count delta:** −5 hard waits, −1 hardcoded URL, −3 sync probes (1 isVisible + 2 innerText), −1 conditional logic, −5 magic strings, −1 CSS class upgraded (error-banner), −1 ambiguous text match, −1 nested describe = **−18 smells removed, +0 introduced**; 1 CSS class smell retained (`.dashboard-greeting`) pending Q4.
+- **LOC delta:** source ~39 LOC → target ~87 LOC across 5 files (spec ~28 + PageClass ~45 + fixture ext ~8 + urls.ts ~3 + labels.ts ~3) = **+48 LOC** — positive because qa-master PageClass adds meaningful structure.
+- **Anti-pattern coverage:** 19/19 cataloged.
+- **TypeScript strict mode:** pass — no `any`, no `as unknown as X` casts; `Locator` type-imported from `@playwright/test` in PageClass only; `page` typed as `Page` via `BasePage` parameter property.

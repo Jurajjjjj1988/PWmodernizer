@@ -6,61 +6,111 @@
     {
       "id": "1.1",
       "title": "signs in with valid credentials @positive",
-      "userAction": "Navigate to /login, fill email + password with valid creds, click Sign in, dashboard greeting visible.",
+      "userAction": "Navigate to /login via loginPage.open(), fill email + password with valid credentials, click Sign in, expect dashboard greeting to be visible and contain the full welcome phrase.",
       "expectedAssertions": [
-        "dashboard greeting visible after submit",
-        "greeting contains 'Welcome back, Jane'"
+        "dashboard greeting element is visible after submit",
+        "greeting text matches /welcome back, jane/i (full phrase + user identity)"
       ]
     },
     {
       "id": "1.2",
       "title": "rejects an invalid password @negative",
-      "userAction": "Navigate to /login, fill valid email + wrong password, click Sign in, error banner shows invalid credentials.",
+      "userAction": "Navigate to /login via loginPage.open(), fill valid email + wrong password, click Sign in, expect error banner with invalid-credentials text and URL to remain on /login.",
       "expectedAssertions": [
-        "error banner visible after submit",
-        "error banner text contains 'Invalid credentials'"
+        "error banner (role=alert) contains /invalid credentials/i",
+        "URL still matches /\\/login/ after submit (no redirect to dashboard)"
       ]
     }
   ],
   "requiredPOMs": [],
-  "requiredFixtures": [],
+  "requiredFixtures": [
+    "outputs/helper/fixtures/base.fixture.ts"
+  ],
+  "requiredPages": [
+    "outputs/helper/page-object/pages/acme-shop-login.page.ts"
+  ],
+  "requiredTestData": [
+    "outputs/helper/test-data/urls.ts",
+    "outputs/helper/test-data/labels.ts"
+  ],
   "locatorTable": [
     {
-      "original": "`page.locator('#email')`",
-      "target": "`page.getByLabel(/email/i)`",
+      "original": "page.locator('#email')",
+      "target": "this.page.getByLabel(/email/i)",
       "confidence": "med",
-      "notes": "Id `email` strongly suggests an email input, and the form convention implies a `<label>` for `email`, but no DOM snapshot confirms the label text. Preserve `page.locator('#email')` as fallback if label is absent — see Q2."
+      "notes": "PageClass field: inputEmail. Assumes <label for='email'> exists. Fallback: page.locator('#email'). See pin 1."
     },
     {
-      "original": "`page.locator('#password')`",
-      "target": "`page.getByLabel(/password/i)`",
+      "original": "page.locator('#password')",
+      "target": "this.page.getByLabel(/password/i)",
       "confidence": "med",
-      "notes": "Same rationale as `#email`. Standard login forms universally label the password field; no DOM snapshot to confirm — see Q2."
+      "notes": "PageClass field: inputPassword. Same assumption as email. Fallback: page.locator('#password'). See pin 2."
     },
     {
-      "original": "`page.getByText('Sign in')`",
-      "target": "`page.getByRole('button', { name: /sign in/i })`",
+      "original": "page.getByText('Sign in')",
+      "target": "this.page.getByRole('button', { name: /sign in/i })",
       "confidence": "med",
-      "notes": "The element is used with `.click()` in a form-submission context, making a `<button>` or `<input type=\"submit\">` likely. However `getByText` matches any element — could be a styled `<a>` or `<div>`. **Review needed: confirm element tag before upgrading to `getByRole`.** Fallback: `page.getByText('Sign in', { exact: true })` (HIGH confidence, keeps current semantics) — see Q5."
+      "notes": "PageClass field: buttonSignIn. Probably <button> or <input type=submit>. Could be <a> or <div>. Fallback: page.getByText('Sign in', { exact: true }). See pin 3."
     },
     {
-      "original": "`page.locator('.dashboard-greeting')`",
-      "target": "`page.locator('.dashboard-greeting')`",
+      "original": "page.locator('.dashboard-greeting')",
+      "target": "this.page.locator('.dashboard-greeting')",
       "confidence": "low",
-      "notes": "CSS class only; no DOM evidence of role, `aria-label`, or `data-testid`. Cannot propose `getByRole` or `getByText` without knowing the element tag and runtime text. Reviewer should add a `data-testid=\"dashboard-greeting\"` to the component or confirm a heading role — see Q3."
+      "notes": "PageClass field: textDashboardGreeting. No DOM evidence for semantic role. CSS class retained. Request data-testid='dashboard-greeting'. See pin 4."
     },
     {
-      "original": "`page.locator('.error-banner')`",
-      "target": "`page.getByRole('alert')`",
+      "original": "page.locator('.error-banner')",
+      "target": "this.page.getByRole('alert')",
       "confidence": "med",
-      "notes": "Error notifications frequently carry `role=\"alert\"` in accessible implementations; `.error-banner` class name reinforces this guess. If the element lacks a role, fallback is `page.locator('.error-banner')` (LOW). If `.error-banner` matches multiple elements on the page, scope with `.filter({ hasText: /invalid credentials/i })` — see Q4."
+      "notes": "PageClass field: alertErrorBanner. Login error banners commonly use role=alert. Fallback: page.locator('.error-banner'). See pin 5."
     }
   ],
-  "hallucinationDefensePins": [],
+  "hallucinationDefensePins": [
+    {
+      "pinId": 1,
+      "elementDescription": "Email input",
+      "assumedLocator": "this.page.getByLabel(/email/i)",
+      "sourceLocator": "page.locator('#email')",
+      "whyComment": "Q1 unresolved: label association for #email not confirmed — getByLabel assumed",
+      "reviewerFallback": "Inspect DOM for <label for='email'>. If absent, switch to page.locator('#email') or getByPlaceholder(/email/i)."
+    },
+    {
+      "pinId": 2,
+      "elementDescription": "Password input",
+      "assumedLocator": "this.page.getByLabel(/password/i)",
+      "sourceLocator": "page.locator('#password')",
+      "whyComment": "Q2 unresolved: label association for #password not confirmed — getByLabel assumed",
+      "reviewerFallback": "Same investigation as pin 1. Fallback: page.locator('#password')."
+    },
+    {
+      "pinId": 3,
+      "elementDescription": "Sign-in button",
+      "assumedLocator": "this.page.getByRole('button', { name: /sign in/i })",
+      "sourceLocator": "page.getByText('Sign in')",
+      "whyComment": "Q3 unresolved: button role not confirmed — element may not be native <button>",
+      "reviewerFallback": "Ask FE team to confirm element type. If not a <button>, keep page.getByText('Sign in', { exact: true })."
+    },
+    {
+      "pinId": 4,
+      "elementDescription": "Dashboard greeting",
+      "assumedLocator": "this.page.locator('.dashboard-greeting')",
+      "sourceLocator": "page.locator('.dashboard-greeting')",
+      "whyComment": "Q4 unresolved: greeting element role unknown — CSS class retained pending DOM evidence",
+      "reviewerFallback": "Request data-testid='dashboard-greeting' from FE team. If heading role confirmed, upgrade to getByRole('heading', { name: /welcome back/i })."
+    },
+    {
+      "pinId": 5,
+      "elementDescription": "Error banner",
+      "assumedLocator": "this.page.getByRole('alert')",
+      "sourceLocator": "page.locator('.error-banner')",
+      "whyComment": "Q5 unresolved: alert role not confirmed on .error-banner",
+      "reviewerFallback": "Ask team to add role='alert' to the error banner component. Fallback: page.locator('.error-banner')."
+    }
+  ],
   "expectedMetrics": {
-    "selectorQualityScore": 0,
-    "smellCountDelta": 0,
-    "locDelta": 0,
-    "antiPatternCoverage": "0/0"
+    "selectorQualityScore": 0.80,
+    "smellCountDelta": -18,
+    "locDelta": 48,
+    "antiPatternCoverage": "19/19"
   }
 }
